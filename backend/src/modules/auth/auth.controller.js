@@ -1,43 +1,45 @@
 import * as authService from './auth.service.js';
-import { success, noContent } from '../../common/utils/response.js';
+import { ok, noContent } from '../../common/utils/response.js';
 
-/**
- * Build audit context from the request object.
- */
-function auditContext(req) {
+function extractReqMeta(req) {
   return {
-    userId: req.user?.id ?? null,
-    role: req.user?.role ?? null,
-    ip: req.ip,
-    userAgent: req.get('user-agent') ?? null,
-    requestId: req.id ?? null,
+    ip: req.ip || req.socket?.remoteAddress || '127.0.0.1',
+    userAgent: req.get('user-agent') || 'unknown',
+    requestId: req.id || req.headers['x-request-id'] || 'unknown',
   };
 }
 
 /**
- * POST /login
+ * POST /api/v1/auth/login
  */
 export async function login(req, res) {
   const { email, password } = req.body;
-  const result = await authService.login(email, password, auditContext(req));
-  return success(res, result);
+  const result = await authService.login(email, password, extractReqMeta(req));
+  return ok(res, result);
 }
 
 /**
- * POST /refresh
+ * POST /api/v1/auth/refresh
  */
 export async function refresh(req, res) {
   const { refreshToken } = req.body;
-  const result = await authService.refresh(refreshToken, auditContext(req));
-  return success(res, result);
+  const result = await authService.refresh(refreshToken, extractReqMeta(req));
+  return ok(res, result);
 }
 
 /**
- * POST /logout
+ * POST /api/v1/auth/logout
  */
 export async function logout(req, res) {
-  const { refreshToken } = req.body;
-  await authService.logout(refreshToken, auditContext(req));
+  const { refreshToken } = req.body || {};
+  await authService.logout(refreshToken, req.user?.id, extractReqMeta(req));
   return noContent(res);
 }
 
+/**
+ * GET /api/v1/auth/me
+ */
+export async function me(req, res) {
+  const user = await authService.me(req.user.id);
+  return ok(res, user);
+}

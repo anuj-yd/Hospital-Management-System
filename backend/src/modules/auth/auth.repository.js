@@ -1,17 +1,58 @@
 import prisma from '../../infra/prisma.js';
 
 /**
- * Find a user by email, including the related doctor record.
+ * Retrieve user by email address with affiliated doctor metadata.
  */
 export async function findUserByEmail(email) {
   return prisma.user.findUnique({
-    where: { email },
-    include: { doctor: { select: { id: true } } },
+    where: { email: email.trim().toLowerCase() },
+    include: {
+      doctor: {
+        select: {
+          id: true,
+          departmentId: true,
+          specialization: true,
+          licenseNumber: true,
+          isActive: true,
+        },
+      },
+    },
   });
 }
 
 /**
- * Create a refresh token record.
+ * Retrieve user by primary key ID.
+ */
+export async function findUserById(id) {
+  return prisma.user.findUnique({
+    where: { id },
+    include: {
+      doctor: {
+        select: {
+          id: true,
+          departmentId: true,
+          specialization: true,
+          licenseNumber: true,
+          isActive: true,
+        },
+      },
+    },
+  });
+}
+
+/**
+ * Update the user's last login timestamp.
+ */
+export async function updateUserLastLogin(id, tx) {
+  const db = tx || prisma;
+  return db.user.update({
+    where: { id },
+    data: { lastLoginAt: new Date() },
+  });
+}
+
+/**
+ * Create a new refresh token record.
  */
 export async function createRefreshToken(data, tx) {
   const db = tx || prisma;
@@ -25,23 +66,21 @@ export async function createRefreshToken(data, tx) {
 }
 
 /**
- * Find a non-revoked, non-expired refresh token by its SHA-256 hash.
+ * Find a refresh token record by tokenHash.
+ * Returns the record regardless of revocation status to enable token reuse attack detection.
  */
-export async function findRefreshTokenByHash(hash) {
-  return prisma.refreshToken.findFirst({
-    where: {
-      tokenHash: hash,
-      revokedAt: null,
-      expiresAt: { gt: new Date() },
-    },
+export async function findRefreshTokenByHash(tokenHash) {
+  return prisma.refreshToken.findUnique({
+    where: { tokenHash },
     include: {
       user: {
         select: {
           id: true,
           email: true,
+          fullName: true,
           role: true,
           isActive: true,
-          doctor: { select: { id: true } },
+          doctor: { select: { id: true, departmentId: true } },
         },
       },
     },
@@ -49,7 +88,7 @@ export async function findRefreshTokenByHash(hash) {
 }
 
 /**
- * Revoke a single refresh token by setting revokedAt.
+ * Revoke a single refresh token by ID.
  */
 export async function revokeRefreshToken(id, tx) {
   const db = tx || prisma;
@@ -60,13 +99,15 @@ export async function revokeRefreshToken(id, tx) {
 }
 
 /**
- * Revoke all refresh tokens for a given user.
+ * Security: Revoke all active refresh tokens for a user (triggered on token reuse breach).
  */
-export async function revokeAllUserTokens(userId, tx) {
+export async function revokeAllUserRefreshTokens(userId, tx) {
   const db = tx || prisma;
   return db.refreshToken.updateMany({
-    where: { userId, revokedAt: null },
+    where: {
+      userId,
+      revokedAt: null,
+    },
     data: { revokedAt: new Date() },
   });
 }
-

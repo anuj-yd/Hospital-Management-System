@@ -1,18 +1,20 @@
 import prisma from '../../infra/prisma.js';
 
 /**
- * Create an audit log entry. Accepts optional `tx` for transactional writes.
+ * Persist an audit log entry.
+ * Supports passing transaction client `tx` for atomic writes.
  */
-export async function createAuditLog(data, tx) {
+export async function create(data, tx) {
   const db = tx || prisma;
+
   return db.auditLog.create({
     data: {
       userId: data.userId ?? null,
-      role: data.role ?? null,
+      userRole: data.userRole ?? null,
       action: data.action,
       entity: data.entity,
-      entityId: data.entityId ?? null,
-      changedFields: data.changedFields ?? undefined,
+      entityId: data.entityId ? String(data.entityId) : null,
+      changes: data.changes ?? undefined,
       ip: data.ip ?? null,
       userAgent: data.userAgent ?? null,
       requestId: data.requestId ?? null,
@@ -20,12 +22,13 @@ export async function createAuditLog(data, tx) {
   });
 }
 
+// Backward-compatible alias
+export const createAuditLog = create;
+
 /**
- * Find all audit logs with pagination and filters.
- * @param {object} filters - { page, limit, userId, action, entity, entityId, dateFrom, dateTo, orderBy }
- * @returns {{ data: object[], total: number }}
+ * Find audit logs with pagination and multi-criteria filtering.
  */
-export async function findAll(filters) {
+export async function findAll(filters = {}) {
   const {
     page = 1,
     limit = 20,
@@ -43,7 +46,7 @@ export async function findAll(filters) {
   if (userId) where.userId = userId;
   if (action) where.action = action;
   if (entity) where.entity = entity;
-  if (entityId) where.entityId = entityId;
+  if (entityId) where.entityId = String(entityId);
 
   if (dateFrom || dateTo) {
     where.createdAt = {};
@@ -61,7 +64,12 @@ export async function findAll(filters) {
       take: limit,
       include: {
         user: {
-          select: { id: true, email: true, firstName: true, lastName: true, role: true },
+          select: {
+            id: true,
+            email: true,
+            fullName: true,
+            role: true,
+          },
         },
       },
     }),
@@ -71,3 +79,21 @@ export async function findAll(filters) {
   return { data, total };
 }
 
+/**
+ * Retrieve single audit entry by primary key.
+ */
+export async function findById(id) {
+  return prisma.auditLog.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          role: true,
+        },
+      },
+    },
+  });
+}
