@@ -1,0 +1,361 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  FRONT_DESK
+  CLINICIAN
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  CHECKED_IN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum VisitStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+  INSURANCE
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+enum AuditAction {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  LOGOUT
+  TOKEN_REFRESH
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+}
+
+// ─── Users (all staff accounts) ─────────────────────────────
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique @db.VarChar(255)
+  passwordHash  String   @map("password_hash") @db.VarChar(255)
+  firstName     String   @map("first_name") @db.VarChar(100)
+  lastName      String   @map("last_name") @db.VarChar(100)
+  role          Role
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  doctor        Doctor?
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+// ─── Refresh tokens ─────────────────────────────────────────
+
+model RefreshToken {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  tokenHash   String   @map("token_hash") @db.VarChar(255)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+// ─── Departments ────────────────────────────────────────────
+
+model Department {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(150)
+  description String?  @db.Text
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  doctors     Doctor[]
+
+  @@map("departments")
+}
+
+// ─── Doctors ────────────────────────────────────────────────
+
+model Doctor {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @unique @map("user_id") @db.Uuid
+  departmentId    String   @map("department_id") @db.Uuid
+  specialization  String   @db.VarChar(200)
+  qualification   String   @db.VarChar(300)
+  licenseNumber   String   @unique @map("license_number") @db.VarChar(50)
+  consultationFee Int      @map("consultation_fee")  // stored in paise (integer)
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department      Department @relation(fields: [departmentId], references: [id])
+  schedules       Schedule[]
+  appointments    Appointment[]
+  visits          Visit[]
+
+  @@map("doctors")
+}
+
+// ─── Schedules (weekly slot templates) ──────────────────────
+
+model Schedule {
+  id         String   @id @default(uuid()) @db.Uuid
+  doctorId   String   @map("doctor_id") @db.Uuid
+  dayOfWeek  Int      @map("day_of_week")  // 1=Monday..7=Sunday (ISO)
+  startTime  String   @map("start_time") @db.VarChar(5)  // "09:00" HH:mm
+  endTime    String   @map("end_time") @db.VarChar(5)    // "17:00" HH:mm
+  slotDurationMinutes Int @default(30) @map("slot_duration_minutes")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  doctor     Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, dayOfWeek, startTime])
+  @@map("schedules")
+}
+
+// ─── Patients ───────────────────────────────────────────────
+
+model Patient {
+  id            String    @id @default(uuid()) @db.Uuid
+  mrn           String    @unique @db.VarChar(20)  // Medical Record Number
+  firstName     String    @map("first_name") @db.VarChar(100)
+  lastName      String    @map("last_name") @db.VarChar(100)
+  dateOfBirth   DateTime  @map("date_of_birth") @db.Date
+  gender        String    @db.VarChar(20)
+  phone         String    @db.VarChar(20)
+  email         String?   @db.VarChar(255)
+  address       String?   @db.Text
+  bloodGroup    String?   @map("blood_group") @db.VarChar(5)
+  emergencyContactName  String? @map("emergency_contact_name") @db.VarChar(200)
+  emergencyContactPhone String? @map("emergency_contact_phone") @db.VarChar(20)
+  isActive      Boolean   @default(true) @map("is_active")
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  appointments  Appointment[]
+  visits        Visit[]
+  invoices      Invoice[]
+
+  @@map("patients")
+}
+
+// ─── Appointments ───────────────────────────────────────────
+
+model Appointment {
+  id              String            @id @default(uuid()) @db.Uuid
+  patientId       String            @map("patient_id") @db.Uuid
+  doctorId        String            @map("doctor_id") @db.Uuid
+  appointmentDate DateTime          @map("appointment_date") @db.Date
+  startTime       String            @map("start_time") @db.VarChar(5)  // "09:00"
+  endTime         String            @map("end_time") @db.VarChar(5)    // "09:30"
+  status          AppointmentStatus @default(SCHEDULED)
+  reason          String?           @db.Text
+  notes           String?           @db.Text  // front-desk notes, not clinical
+  cancelReason    String?           @map("cancel_reason") @db.Text
+  idempotencyKey  String?           @unique @map("idempotency_key") @db.VarChar(100)
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  patient         Patient           @relation(fields: [patientId], references: [id])
+  doctor          Doctor            @relation(fields: [doctorId], references: [id])
+  visit           Visit?
+
+  @@index([doctorId, appointmentDate])
+  @@index([patientId])
+  @@map("appointments")
+  // Partial unique index for double-booking prevention is added via raw SQL migration
+}
+
+// ─── Visits (clinical encounter) ────────────────────────────
+
+model Visit {
+  id              String      @id @default(uuid()) @db.Uuid
+  appointmentId   String      @unique @map("appointment_id") @db.Uuid
+  patientId       String      @map("patient_id") @db.Uuid
+  doctorId        String      @map("doctor_id") @db.Uuid
+  status          VisitStatus @default(IN_PROGRESS)
+  clinicalNotes   String?     @map("clinical_notes") @db.Text
+  diagnosis       String?     @db.Text
+  vitalSigns      Json?       @map("vital_signs")    // { bp, pulse, temp, weight, height, spo2 }
+  completedAt     DateTime?   @map("completed_at") @db.Timestamptz
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+
+  appointment     Appointment @relation(fields: [appointmentId], references: [id])
+  patient         Patient     @relation(fields: [patientId], references: [id])
+  doctor          Doctor      @relation(fields: [doctorId], references: [id])
+  prescriptions   Prescription[]
+  diagnosticReports DiagnosticReport[]
+
+  @@index([doctorId])
+  @@index([patientId])
+  @@map("visits")
+}
+
+// ─── Prescriptions ──────────────────────────────────────────
+
+model Prescription {
+  id            String   @id @default(uuid()) @db.Uuid
+  visitId       String   @map("visit_id") @db.Uuid
+  medicationName String  @map("medication_name") @db.VarChar(200)
+  dosage        String   @db.VarChar(100)
+  frequency     String   @db.VarChar(100)
+  duration      String   @db.VarChar(100)
+  route         String   @default("oral") @db.VarChar(50)
+  instructions  String?  @db.Text
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  visit         Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@index([visitId])
+  @@map("prescriptions")
+}
+
+// ─── Diagnostic Reports ─────────────────────────────────────
+
+model DiagnosticReport {
+  id            String   @id @default(uuid()) @db.Uuid
+  visitId       String   @map("visit_id") @db.Uuid
+  reportType    String   @map("report_type") @db.VarChar(100)  // e.g. "Blood Test", "X-Ray"
+  title         String   @db.VarChar(300)
+  findings      String?  @db.Text
+  impression    String?  @db.Text
+  status        String   @default("PENDING") @db.VarChar(30)   // PENDING, COMPLETED
+  orderedAt     DateTime @default(now()) @map("ordered_at") @db.Timestamptz
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  visit         Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@index([visitId])
+  @@map("diagnostic_reports")
+}
+
+// ─── Invoices ───────────────────────────────────────────────
+
+model Invoice {
+  id            String        @id @default(uuid()) @db.Uuid
+  invoiceNumber String        @unique @map("invoice_number") @db.VarChar(30)
+  patientId     String        @map("patient_id") @db.Uuid
+  status        InvoiceStatus @default(DRAFT)
+  totalAmount   Int           @map("total_amount")   // paise
+  paidAmount    Int           @default(0) @map("paid_amount")  // paise
+  notes         String?       @db.Text
+  issuedAt      DateTime?     @map("issued_at") @db.Timestamptz
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  patient       Patient       @relation(fields: [patientId], references: [id])
+  lineItems     InvoiceLineItem[]
+  payments      Payment[]
+
+  @@index([patientId])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  invoiceId   String  @map("invoice_id") @db.Uuid
+  description String  @db.VarChar(300)
+  quantity    Int     @default(1)
+  unitPrice   Int     @map("unit_price")  // paise
+  totalPrice  Int     @map("total_price") // paise
+
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_line_items")
+}
+
+// ─── Payments ───────────────────────────────────────────────
+
+model Payment {
+  id              String        @id @default(uuid()) @db.Uuid
+  invoiceId       String        @map("invoice_id") @db.Uuid
+  amount          Int           // paise
+  method          PaymentMethod
+  status          PaymentStatus @default(SUCCESS)
+  transactionRef  String?       @map("transaction_ref") @db.VarChar(100)
+  notes           String?       @db.Text
+  idempotencyKey  String?       @unique @map("idempotency_key") @db.VarChar(100)
+  paidAt          DateTime      @default(now()) @map("paid_at") @db.Timestamptz
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  invoice         Invoice       @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@map("payments")
+}
+
+// ─── Audit Log ──────────────────────────────────────────────
+
+model AuditLog {
+  id            String      @id @default(uuid()) @db.Uuid
+  userId        String?     @map("user_id") @db.Uuid
+  role          String?     @db.VarChar(20)
+  action        AuditAction
+  entity        String      @db.VarChar(50)
+  entityId      String?     @map("entity_id") @db.Uuid
+  changedFields Json?       @map("changed_fields")  // { field: { old, new } }
+  ip            String?     @db.VarChar(45)
+  userAgent     String?     @map("user_agent") @db.Text
+  requestId     String?     @map("request_id") @db.VarChar(50)
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

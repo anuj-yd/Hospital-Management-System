@@ -1,0 +1,43 @@
+{
+  "name": "hms-backend",
+  "version": "1.0.0",
+  "description": "Hospital Management System – REST API backend",
+  "type": "module",
+  "engines": { "node": ">=20.0.0" },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "db:migrate": "npx prisma migrate dev",
+    "db:migrate:prod": "npx prisma migrate deploy",
+    "db:seed": "node prisma/seed.js",
+    "db:studio": "npx prisma studio",
+    "db:generate": "npx prisma generate",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' npx jest --runInBand --detectOpenHandles",
+    "test:unit": "NODE_OPTIONS='--experimental-vm-modules' npx jest --runInBand tests/unit",
+    "test:integration": "NODE_OPTIONS='--experimental-vm-modules' npx jest --runInBand tests/integration",
+    "lint": "eslint src/ tests/"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.1.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "luxon": "^3.5.0",
+    "pino": "^9.4.0",
+    "pino-http": "^10.3.0",
+    "swagger-ui-express": "^5.0.1",
+    "uuid": "^10.0.0",
+    "yamljs": "^0.3.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "prisma": "^6.1.0",
+    "supertest": "^7.0.0",
+    "@jest/globals": "^29.7.0",
+    "pino-pretty": "^11.2.0"
+  }
+}
