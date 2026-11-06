@@ -1,26 +1,19 @@
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env.js';
-import { logger } from '../config/logger.js';
 
-const prisma = new PrismaClient({
-  datasourceUrl: env.DATABASE_URL,
-  log:
-    env.NODE_ENV === 'development'
-      ? [
-          { emit: 'event', level: 'query' },
-          { emit: 'event', level: 'error' },
-        ]
-      : [{ emit: 'event', level: 'error' }],
-});
+const globalForPrisma = globalThis;
 
-if (env.NODE_ENV === 'development') {
-  prisma.$on('query', (e) => {
-    logger.debug({ duration: e.duration, query: e.query }, 'prisma query');
+export const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient({
+    log:
+      env.NODE_ENV === 'development'
+        ? ['query', 'error', 'warn']
+        : ['error'],
   });
-}
 
-prisma.$on('error', (e) => {
-  logger.error({ message: e.message }, 'prisma error');
-});
+if (env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
+}
 
 export default prisma;
