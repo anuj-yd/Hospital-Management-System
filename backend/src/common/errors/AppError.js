@@ -1,19 +1,20 @@
 /**
- * Base application error. All custom errors extend this.
- * Never expose stack traces to clients in production.
+ * Base application error. All custom domain errors extend this.
+ * Prevents internal stack traces from leaking to clients in production.
  */
 export class AppError extends Error {
   /**
-   * @param {string} code    Machine-readable error code (e.g. "VALIDATION_ERROR")
-   * @param {string} message Human-readable message
-   * @param {number} status  HTTP status code
-   * @param {any[]}  details Optional array of validation details
+   * @param {string} code       Machine-readable error code (e.g. "VALIDATION_ERROR")
+   * @param {string} message    Human-readable error description
+   * @param {number} statusCode HTTP status code (e.g. 400, 401, 403, 404, 409, 422, 500)
+   * @param {any[]}  details    Optional array of error/validation details
    */
-  constructor(code, message, status = 500, details = []) {
+  constructor(code, message, statusCode = 500, details = []) {
     super(message);
     this.name = this.constructor.name;
     this.code = code;
-    this.status = status;
+    this.statusCode = statusCode;
+    this.status = statusCode;
     this.details = details;
     Error.captureStackTrace(this, this.constructor);
   }
@@ -45,35 +46,35 @@ export class NotFoundError extends AppError {
 }
 
 export class ConflictError extends AppError {
-  constructor(code = 'CONFLICT', message = 'Resource conflict') {
+  constructor(message = 'Resource conflict', code = 'CONFLICT') {
     super(code, message, 409);
   }
 }
 
-export class SlotTakenError extends AppError {
-  constructor(message = 'This time slot is already booked') {
-    super('SLOT_TAKEN', message, 409);
+export class InvalidStateTransitionError extends AppError {
+  constructor(entity = 'Resource', from = 'unknown', to = 'unknown', customMessage) {
+    const message = customMessage || `Cannot transition ${entity} from '${from}' to '${to}'`;
+    super('INVALID_STATE_TRANSITION', message, 409);
   }
 }
 
-export class InvalidStateTransitionError extends AppError {
-  constructor(entity, from, to) {
-    super(
-      'INVALID_STATE_TRANSITION',
-      `Cannot transition ${entity} from '${from}' to '${to}'`,
-      409,
-    );
+export class BusinessRuleError extends AppError {
+  constructor(message = 'Business rule violation', details = []) {
+    super('BUSINESS_RULE_VIOLATION', message, 422, details);
   }
 }
+
+// Backward-compatible alias
+export const BusinessRuleViolationError = BusinessRuleError;
 
 export class IdempotencyConflictError extends AppError {
-  constructor(message = 'A request with this idempotency key has already been processed') {
+  constructor(message = 'A request with this idempotency key has already been processed with different payload') {
     super('IDEMPOTENCY_CONFLICT', message, 409);
   }
 }
 
-export class BusinessRuleViolationError extends AppError {
-  constructor(message = 'Business rule violation') {
-    super('BUSINESS_RULE_VIOLATION', message, 422);
+export class SlotTakenError extends AppError {
+  constructor(message = 'This appointment time slot is already booked for this doctor') {
+    super('SLOT_TAKEN', message, 409);
   }
 }
