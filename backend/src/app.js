@@ -5,8 +5,10 @@ import pinoHttp from 'pino-http';
 
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
+import prisma from './infra/prisma.js';
 import { mountSwagger } from './config/swagger.js';
 import { requestId } from './common/middleware/requestId.js';
+import { requestContextMiddleware } from './common/context/requestContext.js';
 import { generalLimiter } from './common/middleware/rateLimiters.js';
 import { notFound } from './common/middleware/notFound.js';
 import { errorHandler } from './common/middleware/errorHandler.js';
@@ -28,7 +30,7 @@ import reportRoutes from './modules/reports/reports.routes.js';
 
 const app = express();
 
-// ── Global middleware ───────────────────────────────────────
+// ── Security & global infrastructure ────────────────────────
 app.use(helmet());
 app.use(
   cors({
@@ -37,6 +39,7 @@ app.use(
   }),
 );
 app.use(requestId);
+app.use(requestContextMiddleware);
 app.use(
   pinoHttp({
     logger,
@@ -47,16 +50,39 @@ app.use(
     },
   }),
 );
-app.use(express.json({ limit: '1mb' }));
+
+// Body parsing with 100kb payload ceiling
+app.use(express.json({ limit: '100kb' }));
 app.use(generalLimiter);
 
-// ── Health check ────────────────────────────────────────────
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+// ── Health check endpoint with DB connectivity check ────────
+const checkHealth = async (_req, res) => {
+  let dbConnected = false;
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbConnected = true;
+  } catch (_err) {
+    dbConnected = false;
+  }
 
-// ── API docs ────────────────────────────────────────────────
+  const status = dbConnected ? 'ok' : 'degraded';
+  const statusCode = dbConnected ? 200 : 503;
+
+  return res.status(statusCode).json({
+    status,
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    database: dbConnected ? 'connected' : 'disconnected',
+  });
+};
+
+app.get('/health', checkHealth);
+app.get('/api/v1/health', checkHealth);
+
+// ── API documentation ───────────────────────────────────────
 mountSwagger(app);
 
-// ── API routes ──────────────────────────────────────────────
+// ── API Routes (mounted under /api/v1) ───────────────────────
 const v1 = '/api/v1';
 app.use(`${v1}/auth`, authRoutes);
 app.use(`${v1}/users`, userRoutes);
@@ -72,7 +98,7 @@ app.use(`${v1}/billing`, billingRoutes);
 app.use(`${v1}/audit-logs`, auditRoutes);
 app.use(`${v1}/reports`, reportRoutes);
 
-// ── Error handling ──────────────────────────────────────────
+// ── Error handling pipeline ─────────────────────────────────
 app.use(notFound);
 app.use(errorHandler);
 
