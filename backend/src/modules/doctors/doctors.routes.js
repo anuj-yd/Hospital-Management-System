@@ -13,6 +13,8 @@ import {
 import * as controller from './doctors.controller.js';
 import * as schedulesController from '../schedules/schedules.controller.js';
 import { replaceScheduleBodySchema } from '../schedules/schedules.schema.js';
+import * as appointmentsController from '../appointments/appointments.controller.js';
+import { getSlotsQuerySchema } from '../appointments/appointments.schema.js';
 
 const router = Router();
 
@@ -67,6 +69,16 @@ router.put(
   validate(doctorIdParamSchema, 'params'),
   validate(replaceScheduleBodySchema),
   asyncHandler(schedulesController.replaceDoctorSchedules),
+);
+
+// GET /doctors/:id/slots — all authenticated roles (ADMIN, FRONT_DESK, CLINICIAN)
+router.get(
+  '/:id/slots',
+  authenticate,
+  authorize(ROLES.ADMIN, ROLES.FRONT_DESK, ROLES.CLINICIAN),
+  validate(doctorIdParamSchema, 'params'),
+  validate(getSlotsQuerySchema, 'query'),
+  appointmentsController.getSlots,
 );
 
 export default router;

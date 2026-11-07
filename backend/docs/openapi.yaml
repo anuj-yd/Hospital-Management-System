@@ -494,6 +494,240 @@ paths:
         '422':
           description: Overlapping windows or times not aligned to slot duration
 
+  /doctors/{id}/slots:
+    get:
+      tags:
+        - Appointments
+      summary: Generate available slots for a doctor (CLINIC_TZ, max 14 days)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: date
+          in: query
+          schema:
+            type: string
+            example: 2026-11-10
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of available slots in UTC
+
+  /appointments:
+    get:
+      tags:
+        - Appointments
+      summary: List appointments (CLINICIAN scoped to own appointments)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: doctorId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: patientId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [SCHEDULED, CHECKED_IN, COMPLETED, CANCELLED, NO_SHOW]
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated appointments
+
+    post:
+      tags:
+        - Appointments
+      summary: Book an appointment (FRONT_DESK, ADMIN; with Idempotency)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - patientId
+                - doctorId
+                - startTime
+              properties:
+                patientId:
+                  type: string
+                  format: uuid
+                doctorId:
+                  type: string
+                  format: uuid
+                startTime:
+                  type: string
+                  format: date-time
+                  example: "2026-11-10T09:00:00.000Z"
+                reason:
+                  type: string
+      responses:
+        '201':
+          description: Appointment booked
+        '409':
+          description: SLOT_TAKEN (database unique index violation)
+        '422':
+          description: PATIENT_DOUBLE_BOOKED or slot misaligned to schedule
+
+  /appointments/{id}:
+    get:
+      tags:
+        - Appointments
+      summary: Get appointment by ID (CLINICIAN scoped)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Appointment details
+
+  /appointments/{id}/reschedule:
+    patch:
+      tags:
+        - Appointments
+      summary: Reschedule appointment (FRONT_DESK, ADMIN; max 3 times)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newStartTime
+              properties:
+                newStartTime:
+                  type: string
+                  format: date-time
+                  example: "2026-11-12T10:00:00.000Z"
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Appointment rescheduled
+        '409':
+          description: SLOT_TAKEN or INVALID_STATE_TRANSITION
+        '422':
+          description: Limit of 3 reached or PATIENT_DOUBLE_BOOKED
+
+  /appointments/{id}/cancel:
+    post:
+      tags:
+        - Appointments
+      summary: Cancel appointment (frees slot)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - cancelReason
+              properties:
+                cancelReason:
+                  type: string
+                  example: "Patient requested cancellation"
+      responses:
+        '200':
+          description: Appointment cancelled
+
+  /appointments/{id}/check-in:
+    post:
+      tags:
+        - Appointments
+      summary: Check in appointment (FRONT_DESK; only on appointment date in CLINIC_TZ)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Checked in
+        '422':
+          description: Not appointment date
+
+  /appointments/{id}/no-show:
+    post:
+      tags:
+        - Appointments
+      summary: Mark appointment as no-show (FRONT_DESK; only after start time passed)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Marked as NO_SHOW
+        '422':
+          description: Appointment start time not yet passed
+
+
   /patients:
     get:
       tags:
