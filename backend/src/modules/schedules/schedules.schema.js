@@ -1,35 +1,26 @@
 import { z } from 'zod';
-import { paginationSchema } from '../../common/utils/pagination.js';
 
 const timeRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-export const createScheduleSchema = z.object({
-  doctorId: z.string().uuid(),
-  dayOfWeek: z.number().int().min(1).max(7),
-  startTime: z.string().regex(timeRegex, 'Must be HH:mm format'),
-  endTime: z.string().regex(timeRegex, 'Must be HH:mm format'),
-  slotDurationMinutes: z.number().int().min(5).max(120).default(30),
-}).refine((data) => data.startTime < data.endTime, {
-  message: 'startTime must be before endTime',
-  path: ['endTime'],
-});
+export const scheduleItemSchema = z
+  .object({
+    dayOfWeek: z.number().int().min(0, 'dayOfWeek must be between 0 (Sunday) and 6 (Saturday)').max(6),
+    startTime: z.string().regex(timeRegex, 'startTime must be in HH:mm format'),
+    endTime: z.string().regex(timeRegex, 'endTime must be in HH:mm format'),
+    isActive: z.boolean().default(true),
+  })
+  .refine((data) => data.startTime < data.endTime, {
+    message: 'startTime must be strictly before endTime',
+    path: ['endTime'],
+  });
 
-export const updateScheduleSchema = z.object({
-  dayOfWeek: z.number().int().min(1).max(7).optional(),
-  startTime: z.string().regex(timeRegex, 'Must be HH:mm format').optional(),
-  endTime: z.string().regex(timeRegex, 'Must be HH:mm format').optional(),
-  slotDurationMinutes: z.number().int().min(5).max(120).optional(),
-  isActive: z.boolean().optional(),
-});
-
-export const listSchedulesSchema = paginationSchema.merge(
+export const replaceScheduleBodySchema = z.union([
+  z.array(scheduleItemSchema),
   z.object({
-    doctorId: z.string().uuid().optional(),
-    dayOfWeek: z.coerce.number().int().min(1).max(7).optional(),
-    isActive: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
-  }),
-);
+    schedules: z.array(scheduleItemSchema),
+  }).transform((val) => val.schedules),
+]);
 
-export const availabilityQuerySchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
+export const doctorScheduleParamSchema = z.object({
+  id: z.string().uuid('Invalid doctor ID format'),
 });

@@ -1,60 +1,65 @@
 import prisma from '../../infra/prisma.js';
 import * as departmentRepo from './departments.repository.js';
-import * as auditRepo from '../audit/audit.repository.js';
-import { NotFoundError, ConflictError } from '../../common/errors/index.js';
+import * as auditService from '../audit/audit.service.js';
+import { NotFoundError, ConflictError, BusinessRuleError } from '../../common/errors/index.js';
 import { buildPagination, buildPaginationMeta, parseSortParam } from '../../common/utils/pagination.js';
 
 const ALLOWED_SORT_FIELDS = ['name', 'createdAt', 'updatedAt'];
 
 /**
- * Create a new department.
+ * Create a new department (ADMIN only).
  */
 export async function createDepartment(data, auditContext) {
+  const trimmedName = data.name.trim();
+
   // Check name uniqueness
-  const existing = await departmentRepo.findByName(data.name);
+  const existing = await departmentRepo.findByName(trimmedName);
   if (existing) {
-    throw new ConflictError(`Department with name "${data.name}" already exists`);
+    throw new ConflictError(`Department with name "${trimmedName}" already exists`);
   }
 
-  const department = await prisma.$transaction(async (tx) => {
-    const created = await departmentRepo.create(data, tx);
-
-    await auditRepo.createAuditLog(
+  return prisma.$transaction(async (tx) => {
+    const created = await departmentRepo.create(
       {
-        userId: auditContext.userId,
-        role: auditContext.role,
-        action: 'CREATE',
-        entity: 'Department',
-        entityId: created.id,
-        ip: auditContext.ip,
-        userAgent: auditContext.userAgent,
-        requestId: auditContext.requestId,
+        name: trimmedName,
+        description: data.description ? data.description.trim() : null,
       },
       tx,
     );
 
+    await auditService.record({
+      tx,
+      actor: auditContext,
+      action: 'CREATE',
+      entity: 'Department',
+      entityId: created.id,
+      changes: {
+        name: { old: null, new: created.name },
+        description: { old: null, new: created.description },
+      },
+    });
+
     return created;
   });
-
-  return department;
 }
 
 /**
- * Get a department by ID.
+ * Get a department by ID (all authenticated roles).
  */
 export async function getDepartmentById(id) {
   const department = await departmentRepo.findById(id);
   if (!department) {
-    throw new NotFoundError('Department not found');
+    throw new NotFoundError('Department', id);
   }
   return department;
 }
 
 /**
- * Get paginated list of departments.
+ * Get paginated list of departments (all authenticated roles).
  */
 export async function getDepartments(filters) {
-  const { page, limit, sort, search, isActive } = filters;
+  const { page, limit, sort, search, q, isActive } = filters;
+  const searchTerm = (search || q || '').trim();
   const orderBy = parseSortParam(sort, ALLOWED_SORT_FIELDS);
   const { skip, take } = buildPagination(page, limit);
 
@@ -64,8 +69,8 @@ export async function getDepartments(filters) {
     where.isActive = isActive;
   }
 
-  if (search) {
-    where.name = { contains: search, mode: 'insensitive' };
+  if (searchTerm) {
+    where.name = { contains: searchTerm, mode: 'insensitive' };
   }
 
   const [data, total] = await Promise.all([
@@ -78,79 +83,71 @@ export async function getDepartments(filters) {
 }
 
 /**
- * Update a department.
+ * Update a department (ADMIN only).
+ * Cannot deactivate a department that has active doctors (422).
  */
 export async function updateDepartment(id, data, auditContext) {
   const existing = await departmentRepo.findById(id);
   if (!existing) {
-    throw new NotFoundError('Department not found');
+    throw new NotFoundError('Department', id);
+  }
+
+  // Business rule: Cannot deactivate a department that has active doctors (422)
+  if (data.isActive === false && existing.isActive === true) {
+    const activeDoctorsCount = await departmentRepo.countActiveDoctors(id);
+    if (activeDoctorsCount > 0) {
+      throw new BusinessRuleError(
+        'Cannot deactivate a department that has active doctors',
+        [{ field: 'isActive', message: `Department currently has ${activeDoctorsCount} active doctor(s)` }],
+      );
+    }
   }
 
   // Check name uniqueness if name is being changed
-  if (data.name && data.name !== existing.name) {
-    const duplicate = await departmentRepo.findByName(data.name);
-    if (duplicate) {
-      throw new ConflictError(`Department with name "${data.name}" already exists`);
+  const updateData = {};
+  if (data.name !== undefined) {
+    const trimmedName = data.name.trim();
+    if (trimmedName.toLowerCase() !== existing.name.toLowerCase()) {
+      const duplicate = await departmentRepo.findByName(trimmedName);
+      if (duplicate && duplicate.id !== id) {
+        throw new ConflictError(`Department with name "${trimmedName}" already exists`);
+      }
     }
+    updateData.name = trimmedName;
   }
 
-  // Build changedFields for audit
+  if (data.description !== undefined) {
+    updateData.description = data.description ? data.description.trim() : null;
+  }
+
+  if (data.isActive !== undefined) {
+    updateData.isActive = data.isActive;
+  }
+
+  // Build changes diff
   const changedFields = {};
-  for (const key of Object.keys(data)) {
-    if (data[key] !== existing[key]) {
-      changedFields[key] = { old: existing[key], new: data[key] };
+  for (const key of Object.keys(updateData)) {
+    if (updateData[key] !== existing[key]) {
+      changedFields[key] = { old: existing[key], new: updateData[key] };
     }
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await departmentRepo.update(id, data, tx);
-
-    await auditRepo.createAuditLog(
-      {
-        userId: auditContext.userId,
-        role: auditContext.role,
-        action: 'UPDATE',
-        entity: 'Department',
-        entityId: id,
-        changedFields: Object.keys(changedFields).length > 0 ? changedFields : undefined,
-        ip: auditContext.ip,
-        userAgent: auditContext.userAgent,
-        requestId: auditContext.requestId,
-      },
-      tx,
-    );
-
-    return result;
-  });
-
-  return updated;
-}
-
-/**
- * Soft delete a department (set isActive = false).
- */
-export async function deleteDepartment(id, auditContext) {
-  const existing = await departmentRepo.findById(id);
-  if (!existing) {
-    throw new NotFoundError('Department not found');
+  if (Object.keys(changedFields).length === 0) {
+    return existing;
   }
 
-  await prisma.$transaction(async (tx) => {
-    await departmentRepo.update(id, { isActive: false }, tx);
+  return prisma.$transaction(async (tx) => {
+    const updated = await departmentRepo.update(id, updateData, tx);
 
-    await auditRepo.createAuditLog(
-      {
-        userId: auditContext.userId,
-        role: auditContext.role,
-        action: 'DELETE',
-        entity: 'Department',
-        entityId: id,
-        changedFields: { isActive: { old: existing.isActive, new: false } },
-        ip: auditContext.ip,
-        userAgent: auditContext.userAgent,
-        requestId: auditContext.requestId,
-      },
+    await auditService.record({
       tx,
-    );
+      actor: auditContext,
+      action: 'UPDATE',
+      entity: 'Department',
+      entityId: id,
+      changes: changedFields,
+    });
+
+    return updated;
   });
 }

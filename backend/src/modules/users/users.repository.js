@@ -4,8 +4,7 @@ import prisma from '../../infra/prisma.js';
 const USER_SELECT = {
   id: true,
   email: true,
-  firstName: true,
-  lastName: true,
+  fullName: true,
   role: true,
   isActive: true,
   createdAt: true,
@@ -21,9 +20,9 @@ export async function create(data, tx) {
     data: {
       email: data.email,
       passwordHash: data.passwordHash,
-      firstName: data.firstName,
-      lastName: data.lastName,
+      fullName: data.fullName,
       role: data.role,
+      isActive: data.isActive ?? true,
     },
     select: USER_SELECT,
   });
@@ -40,7 +39,17 @@ export async function findById(id) {
 }
 
 /**
- * Find a user by ID including passwordHash (for password verification).
+ * Find a user by email (without passwordHash).
+ */
+export async function findByEmail(email) {
+  return prisma.user.findUnique({
+    where: { email },
+    select: USER_SELECT,
+  });
+}
+
+/**
+ * Find a user by ID including passwordHash (for authentication / verification).
  */
 export async function findByIdWithPassword(id) {
   return prisma.user.findUnique({
@@ -49,8 +58,7 @@ export async function findByIdWithPassword(id) {
 }
 
 /**
- * Find all users with pagination, search, and role filter.
- * @returns {Promise<object[]>}
+ * Find all users with pagination, search, and filters.
  */
 export async function findAll(filters) {
   const {
@@ -69,8 +77,7 @@ export async function findAll(filters) {
 
   if (search) {
     where.OR = [
-      { firstName: { contains: search, mode: 'insensitive' } },
-      { lastName: { contains: search, mode: 'insensitive' } },
+      { fullName: { contains: search, mode: 'insensitive' } },
       { email: { contains: search, mode: 'insensitive' } },
     ];
   }
@@ -96,8 +103,7 @@ export async function count(filters) {
 
   if (search) {
     where.OR = [
-      { firstName: { contains: search, mode: 'insensitive' } },
-      { lastName: { contains: search, mode: 'insensitive' } },
+      { fullName: { contains: search, mode: 'insensitive' } },
       { email: { contains: search, mode: 'insensitive' } },
     ];
   }
@@ -106,7 +112,7 @@ export async function count(filters) {
 }
 
 /**
- * Update a user by ID.
+ * Update user fields.
  */
 export async function update(id, data, tx) {
   const db = tx || prisma;
@@ -116,4 +122,3 @@ export async function update(id, data, tx) {
     select: USER_SELECT,
   });
 }
-

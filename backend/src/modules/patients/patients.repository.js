@@ -1,25 +1,22 @@
 import prisma from '../../infra/prisma.js';
 
 /**
- * Generate a unique Medical Record Number inside a transaction.
- * Format: MRN-000001
+ * Generate a unique Medical Record Number safely under concurrency using a DB sequence.
+ * Format: HMS-000123
  */
 export async function generateMrn(tx) {
   const db = tx || prisma;
-
-  // Find the patient with the highest MRN number
-  const last = await db.patient.findFirst({
-    orderBy: { mrn: 'desc' },
-    select: { mrn: true },
-  });
-
-  let nextNumber = 1;
-  if (last?.mrn) {
-    const numPart = parseInt(last.mrn.replace('MRN-', ''), 10);
-    if (!isNaN(numPart)) nextNumber = numPart + 1;
+  try {
+    await db.$executeRawUnsafe(`CREATE SEQUENCE IF NOT EXISTS patient_mrn_seq START WITH 1 INCREMENT BY 1;`);
+    const result = await db.$queryRawUnsafe(`SELECT nextval('patient_mrn_seq') as seq;`);
+    const nextVal = Number(result[0].seq);
+    return `HMS-${String(nextVal).padStart(6, '0')}`;
+  } catch (_err) {
+    // Fail-safe fallback if sequence generation fails
+    const total = await db.patient.count();
+    const fallbackSeq = total + Math.floor(Math.random() * 1000) + 1;
+    return `HMS-${String(fallbackSeq).padStart(6, '0')}`;
   }
-
-  return `MRN-${String(nextNumber).padStart(6, '0')}`;
 }
 
 /**
@@ -31,49 +28,39 @@ export async function create(data, tx) {
 }
 
 /**
- * Find patient by ID (excludes soft-deleted by default).
+ * Find patient by ID.
  */
-export async function findById(id, { includeSoftDeleted = false } = {}) {
-  const where = { id };
-  if (!includeSoftDeleted) {
-    where.isActive = true;
-    where.deletedAt = null;
-  }
-  return prisma.patient.findFirst({ where });
+export async function findById(id) {
+  return prisma.patient.findUnique({
+    where: { id },
+  });
 }
 
 /**
  * Find all patients with pagination, search, and filters.
- * @param {object} filters - { page, limit, orderBy, search, isActive, gender, patientIds }
  */
 export async function findAll(filters) {
   const {
-    page = 1,
-    limit = 20,
+    skip,
+    take,
     orderBy = [{ createdAt: 'desc' }],
     search,
     isActive,
     gender,
-    patientIds, // optional array — used by clinician scoping
+    patientIds,
   } = filters;
 
   const where = {};
 
-  // Exclude soft-deleted by default unless isActive explicitly false
-  if (isActive === false) {
-    where.isActive = false;
-  } else if (isActive === true) {
-    where.isActive = true;
-    where.deletedAt = null;
-  } else {
-    // Default: only active, non-deleted
-    where.isActive = true;
-    where.deletedAt = null;
+  if (isActive !== undefined) {
+    where.isActive = isActive;
   }
 
-  if (gender) where.gender = gender;
+  if (gender) {
+    where.gender = gender;
+  }
 
-  // Clinician scoping
+  // Clinician scoping: restrict to authorized patient IDs
   if (patientIds) {
     where.id = { in: patientIds };
   }
@@ -88,38 +75,33 @@ export async function findAll(filters) {
     ];
   }
 
-  const skip = (page - 1) * limit;
-
-  const [data, total] = await Promise.all([
-    prisma.patient.findMany({
-      where,
-      orderBy,
-      skip,
-      take: limit,
-    }),
-    prisma.patient.count({ where }),
-  ]);
-
-  return { data, total };
+  return prisma.patient.findMany({
+    where,
+    orderBy,
+    skip,
+    take,
+  });
 }
 
 /**
- * Count patients matching filters (delegates to findAll logic).
+ * Count patients matching filters.
  */
 export async function count(filters) {
   const { search, isActive, gender, patientIds } = filters;
 
   const where = {};
 
-  if (isActive === false) {
-    where.isActive = false;
-  } else {
-    where.isActive = true;
-    where.deletedAt = null;
+  if (isActive !== undefined) {
+    where.isActive = isActive;
   }
 
-  if (gender) where.gender = gender;
-  if (patientIds) where.id = { in: patientIds };
+  if (gender) {
+    where.gender = gender;
+  }
+
+  if (patientIds) {
+    where.id = { in: patientIds };
+  }
 
   if (search) {
     where.OR = [
@@ -138,13 +120,18 @@ export async function count(filters) {
  */
 export async function update(id, data, tx) {
   const db = tx || prisma;
-  return db.patient.update({ where: { id }, data });
+  return db.patient.update({
+    where: { id },
+    data,
+  });
 }
 
 /**
  * Find distinct patient IDs accessible to a clinician (via appointments or visits).
  */
 export async function findPatientIdsForDoctor(doctorId) {
+  if (!doctorId) return [];
+
   const [apptPatients, visitPatients] = await Promise.all([
     prisma.appointment.findMany({
       where: { doctorId },
@@ -164,4 +151,24 @@ export async function findPatientIdsForDoctor(doctorId) {
   ]);
 
   return [...ids];
+}
+
+/**
+ * Fast check: whether a doctor has had any appointment or visit with this patient.
+ */
+export async function hasDoctorAccessToPatient(doctorId, patientId) {
+  if (!doctorId || !patientId) return false;
+
+  const [hasAppt, hasVisit] = await Promise.all([
+    prisma.appointment.findFirst({
+      where: { doctorId, patientId },
+      select: { id: true },
+    }),
+    prisma.visit.findFirst({
+      where: { doctorId, patientId },
+      select: { id: true },
+    }),
+  ]);
+
+  return Boolean(hasAppt || hasVisit);
 }

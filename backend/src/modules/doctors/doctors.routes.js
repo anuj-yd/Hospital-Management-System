@@ -3,56 +3,70 @@ import { authenticate } from '../../common/middleware/authenticate.js';
 import { authorize } from '../../common/middleware/authorize.js';
 import { validate } from '../../common/middleware/validate.js';
 import { asyncHandler } from '../../common/utils/asyncHandler.js';
+import { ROLES } from '../../common/constants/roles.js';
 import {
   createDoctorSchema,
   updateDoctorSchema,
   listDoctorsSchema,
+  doctorIdParamSchema,
 } from './doctors.schema.js';
 import * as controller from './doctors.controller.js';
+import * as schedulesController from '../schedules/schedules.controller.js';
+import { replaceScheduleBodySchema } from '../schedules/schedules.schema.js';
 
 const router = Router();
 
-// POST / — create a doctor profile
-router.post(
-  '/',
-  authenticate,
-  authorize('doctors:create'),
-  validate(createDoctorSchema),
-  asyncHandler(controller.create),
-);
-
-// GET / — list doctors
+// GET /doctors — all authenticated roles
 router.get(
   '/',
   authenticate,
-  authorize('doctors:read'),
   validate(listDoctorsSchema, 'query'),
   asyncHandler(controller.list),
 );
 
-// GET /:id — get a doctor by ID
+// GET /doctors/:id — all authenticated roles
 router.get(
   '/:id',
   authenticate,
-  authorize('doctors:read'),
+  validate(doctorIdParamSchema, 'params'),
   asyncHandler(controller.getById),
 );
 
-// PATCH /:id — update a doctor profile
+// POST /doctors — ADMIN only
+router.post(
+  '/',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  validate(createDoctorSchema),
+  asyncHandler(controller.create),
+);
+
+// PATCH /doctors/:id — ADMIN only
 router.patch(
   '/:id',
   authenticate,
-  authorize('doctors:update'),
+  authorize(ROLES.ADMIN),
+  validate(doctorIdParamSchema, 'params'),
   validate(updateDoctorSchema),
   asyncHandler(controller.update),
 );
 
-// DELETE /:id — soft delete a doctor
-router.delete(
-  '/:id',
+// GET /doctors/:id/schedules — all authenticated roles
+router.get(
+  '/:id/schedules',
   authenticate,
-  authorize('doctors:delete'),
-  asyncHandler(controller.remove),
+  validate(doctorIdParamSchema, 'params'),
+  asyncHandler(schedulesController.getDoctorSchedules),
+);
+
+// PUT /doctors/:id/schedules — ADMIN only
+router.put(
+  '/:id/schedules',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  validate(doctorIdParamSchema, 'params'),
+  validate(replaceScheduleBodySchema),
+  asyncHandler(schedulesController.replaceDoctorSchedules),
 );
 
 export default router;

@@ -1,12 +1,9 @@
 import * as usersService from './users.service.js';
-import { success, created, paginated, noContent } from '../../common/utils/response.js';
+import { success, created, paginated } from '../../common/utils/response.js';
 
-/**
- * Build audit context from the request object.
- */
 function auditContext(req) {
   return {
-    userId: req.user.id,
+    id: req.user.id,
     role: req.user.role,
     ip: req.ip,
     userAgent: req.get('user-agent') ?? null,
@@ -15,7 +12,7 @@ function auditContext(req) {
 }
 
 /**
- * POST / — create user.
+ * POST /users — create user.
  */
 export async function create(req, res) {
   const user = await usersService.createUser(req.body, auditContext(req));
@@ -23,7 +20,7 @@ export async function create(req, res) {
 }
 
 /**
- * GET /:id — get user by ID.
+ * GET /users/:id — get user by ID.
  */
 export async function getById(req, res) {
   const user = await usersService.getUserById(req.params.id);
@@ -31,7 +28,7 @@ export async function getById(req, res) {
 }
 
 /**
- * GET / — list users.
+ * GET /users — list users with search, role filter, and pagination.
  */
 export async function list(req, res) {
   const { data, meta } = await usersService.getUsers(req.query);
@@ -39,7 +36,7 @@ export async function list(req, res) {
 }
 
 /**
- * PATCH /:id — update user.
+ * PATCH /users/:id — update user (role, isActive, fullName).
  */
 export async function update(req, res) {
   const user = await usersService.updateUser(req.params.id, req.body, auditContext(req));
@@ -47,11 +44,13 @@ export async function update(req, res) {
 }
 
 /**
- * POST /:id/change-password
+ * POST /users/:id/reset-password — Admin reset password.
  */
-export async function changePassword(req, res) {
-  const { currentPassword, newPassword } = req.body;
-  await usersService.changePassword(req.params.id, currentPassword, newPassword, auditContext(req));
-  return noContent(res);
+export async function resetPassword(req, res) {
+  const result = await usersService.resetPassword(
+    req.params.id,
+    req.body.newPassword,
+    auditContext(req),
+  );
+  return success(res, result);
 }
-

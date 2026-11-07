@@ -3,56 +3,50 @@ import { authenticate } from '../../common/middleware/authenticate.js';
 import { authorize } from '../../common/middleware/authorize.js';
 import { validate } from '../../common/middleware/validate.js';
 import { asyncHandler } from '../../common/utils/asyncHandler.js';
+import { ROLES } from '../../common/constants/roles.js';
 import {
   createDepartmentSchema,
   updateDepartmentSchema,
   listDepartmentsSchema,
+  departmentIdParamSchema,
 } from './departments.schema.js';
 import * as controller from './departments.controller.js';
 
 const router = Router();
 
-// POST / — create a department
-router.post(
-  '/',
-  authenticate,
-  authorize('departments:create'),
-  validate(createDepartmentSchema),
-  asyncHandler(controller.create),
-);
-
-// GET / — list departments
+// GET /departments — all authenticated roles can read
 router.get(
   '/',
   authenticate,
-  authorize('departments:read'),
   validate(listDepartmentsSchema, 'query'),
   asyncHandler(controller.list),
 );
 
-// GET /:id — get a department by ID
+// GET /departments/:id — all authenticated roles can read
 router.get(
   '/:id',
   authenticate,
-  authorize('departments:read'),
+  validate(departmentIdParamSchema, 'params'),
   asyncHandler(controller.getById),
 );
 
-// PATCH /:id — update a department
+// POST /departments — ADMIN only
+router.post(
+  '/',
+  authenticate,
+  authorize(ROLES.ADMIN),
+  validate(createDepartmentSchema),
+  asyncHandler(controller.create),
+);
+
+// PATCH /departments/:id — ADMIN only
 router.patch(
   '/:id',
   authenticate,
-  authorize('departments:update'),
+  authorize(ROLES.ADMIN),
+  validate(departmentIdParamSchema, 'params'),
   validate(updateDepartmentSchema),
   asyncHandler(controller.update),
-);
-
-// DELETE /:id — soft delete a department
-router.delete(
-  '/:id',
-  authenticate,
-  authorize('departments:delete'),
-  asyncHandler(controller.remove),
 );
 
 export default router;

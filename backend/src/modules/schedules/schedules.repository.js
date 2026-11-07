@@ -1,77 +1,50 @@
 import prisma from '../../infra/prisma.js';
 
-export async function create(data, tx) {
-  const db = tx || prisma;
-  return db.schedule.create({ data });
-}
-
-export async function findById(id) {
-  return prisma.schedule.findUnique({
-    where: { id },
-    include: {
-      doctor: {
-        include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
-      },
-    },
-  });
-}
-
-export async function findAll(filters) {
-  const { page = 1, limit = 20, orderBy = [{ createdAt: 'desc' }], doctorId, dayOfWeek, isActive } = filters;
-
-  const where = {};
-  if (doctorId) where.doctorId = doctorId;
-  if (dayOfWeek !== undefined) where.dayOfWeek = dayOfWeek;
-  if (isActive !== undefined) where.isActive = isActive;
-
-  const skip = (page - 1) * limit;
-
-  const [data, total] = await Promise.all([
-    prisma.schedule.findMany({
-      where,
-      orderBy,
-      skip,
-      take: limit,
-      include: {
-        doctor: {
-          include: { user: { select: { id: true, firstName: true, lastName: true } } },
-        },
-      },
-    }),
-    prisma.schedule.count({ where }),
-  ]);
-
-  return { data, total };
-}
-
-export async function update(id, data, tx) {
-  const db = tx || prisma;
-  return db.schedule.update({ where: { id }, data });
-}
-
 /**
- * Find schedules for a specific doctor on a specific day of week.
- * Used for availability checking.
+ * Find all schedules for a specific doctor.
  */
-export async function findByDoctorAndDay(doctorId, dayOfWeek) {
-  return prisma.schedule.findMany({
-    where: { doctorId, dayOfWeek, isActive: true },
-    orderBy: { startTime: 'asc' },
+export async function findByDoctorId(doctorId) {
+  return prisma.doctorSchedule.findMany({
+    where: { doctorId },
+    orderBy: [
+      { dayOfWeek: 'asc' },
+      { startTime: 'asc' },
+    ],
   });
 }
 
 /**
- * Check for overlapping schedule on the same doctor+day.
- * Two schedules overlap if one starts before the other ends.
+ * Replace all schedules for a doctor atomically in a transaction.
  */
-export async function findOverlapping(doctorId, dayOfWeek, startTime, endTime, excludeId) {
-  const where = {
-    doctorId,
-    dayOfWeek,
-    isActive: true,
-    startTime: { lt: endTime },
-    endTime: { gt: startTime },
-  };
-  if (excludeId) where.id = { not: excludeId };
-  return prisma.schedule.findFirst({ where });
+export async function replaceSchedules(doctorId, schedules, tx) {
+  const db = tx || prisma;
+
+  // 1. Delete all existing schedules for this doctor
+  await db.doctorSchedule.deleteMany({
+    where: { doctorId },
+  });
+
+  // 2. Insert new schedule windows
+  if (schedules && schedules.length > 0) {
+    const dataToInsert = schedules.map((s) => ({
+      doctorId,
+      dayOfWeek: s.dayOfWeek,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      isActive: s.isActive ?? true,
+    }));
+
+    await db.doctorSchedule.createMany({
+      data: dataToInsert,
+    });
+  }
+
+  // 3. Return the new active schedules
+  return db.doctorSchedule.findMany({
+    where: { doctorId },
+    orderBy: [
+      { dayOfWeek: 'asc' },
+      { startTime: 'asc' },
+    ],
+  });
 }

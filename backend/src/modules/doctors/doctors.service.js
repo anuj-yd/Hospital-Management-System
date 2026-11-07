@@ -1,62 +1,74 @@
 import prisma from '../../infra/prisma.js';
 import * as doctorRepo from './doctors.repository.js';
-import * as auditRepo from '../audit/audit.repository.js';
+import * as auditService from '../audit/audit.service.js';
 import * as usersService from '../users/users.service.js';
 import * as departmentsService from '../departments/departments.service.js';
-import { NotFoundError, ConflictError, BusinessRuleViolationError } from '../../common/errors/index.js';
+import { NotFoundError, ConflictError, BusinessRuleError } from '../../common/errors/index.js';
 import { ROLES } from '../../common/constants/roles.js';
 import { buildPagination, buildPaginationMeta, parseSortParam } from '../../common/utils/pagination.js';
 
 const ALLOWED_SORT_FIELDS = ['createdAt', 'updatedAt', 'specialization', 'consultationFee'];
 
 /**
- * Create a new doctor profile.
+ * Create a new doctor profile (ADMIN only).
  */
 export async function createDoctor(data, auditContext) {
-  // Verify user exists and has CLINICIAN role
-  const user = await usersService.getUserById(data.userId);
-  if (user.role !== ROLES.CLINICIAN) {
-    throw new BusinessRuleViolationError(
-      `User must have the ${ROLES.CLINICIAN} role to be registered as a doctor`,
-    );
+  // 1. If userId is provided, validate user exists, is CLINICIAN, and is not already linked
+  if (data.userId) {
+    const user = await usersService.getUserById(data.userId);
+    if (user.role !== ROLES.CLINICIAN) {
+      throw new BusinessRuleError(
+        `User must have the ${ROLES.CLINICIAN} role to be registered as a doctor`,
+        [{ field: 'userId', message: `User has role '${user.role}' instead of '${ROLES.CLINICIAN}'` }],
+      );
+    }
+
+    const existingProfile = await doctorRepo.findByUserId(data.userId);
+    if (existingProfile) {
+      throw new ConflictError('This user already has a doctor profile');
+    }
   }
 
-  // Verify department exists
+  // 2. Verify department exists
   await departmentsService.getDepartmentById(data.departmentId);
 
-  // Check license number uniqueness
-  const existingLicense = await doctorRepo.findByLicenseNumber(data.licenseNumber);
+  // 3. Check license number uniqueness
+  const trimmedLicense = data.licenseNumber.trim();
+  const existingLicense = await doctorRepo.findByLicenseNumber(trimmedLicense);
   if (existingLicense) {
-    throw new ConflictError(`A doctor with license number "${data.licenseNumber}" already exists`);
+    throw new ConflictError(`A doctor with license number "${trimmedLicense}" already exists`);
   }
 
-  // Check user doesn't already have a doctor profile
-  const existingProfile = await doctorRepo.findByUserId(data.userId);
-  if (existingProfile) {
-    throw new ConflictError('This user already has a doctor profile');
-  }
-
-  const doctor = await prisma.$transaction(async (tx) => {
-    const created = await doctorRepo.create(data, tx);
-
-    await auditRepo.createAuditLog(
+  return prisma.$transaction(async (tx) => {
+    const created = await doctorRepo.create(
       {
-        userId: auditContext.userId,
-        role: auditContext.role,
-        action: 'CREATE',
-        entity: 'Doctor',
-        entityId: created.id,
-        ip: auditContext.ip,
-        userAgent: auditContext.userAgent,
-        requestId: auditContext.requestId,
+        userId: data.userId || null,
+        departmentId: data.departmentId,
+        specialization: data.specialization.trim(),
+        licenseNumber: trimmedLicense,
+        slotDurationMin: data.slotDurationMin ?? 30,
+        consultationFee: data.consultationFee,
       },
       tx,
     );
 
+    await auditService.record({
+      tx,
+      actor: auditContext,
+      action: 'CREATE',
+      entity: 'Doctor',
+      entityId: created.id,
+      changes: {
+        userId: { old: null, new: created.userId },
+        departmentId: { old: null, new: created.departmentId },
+        specialization: { old: null, new: created.specialization },
+        licenseNumber: { old: null, new: created.licenseNumber },
+        consultationFee: { old: null, new: created.consultationFee },
+      },
+    });
+
     return created;
   });
-
-  return doctor;
 }
 
 /**
@@ -65,16 +77,17 @@ export async function createDoctor(data, auditContext) {
 export async function getDoctorById(id) {
   const doctor = await doctorRepo.findById(id);
   if (!doctor) {
-    throw new NotFoundError('Doctor not found');
+    throw new NotFoundError('Doctor', id);
   }
   return doctor;
 }
 
 /**
- * Get paginated list of doctors.
+ * Get paginated list of doctors (filters: departmentId, search by name/specialization, isActive).
  */
 export async function getDoctors(filters) {
-  const { page, limit, sort, search, departmentId, isActive } = filters;
+  const { page, limit, sort, search, q, departmentId, isActive } = filters;
+  const searchTerm = (search || q || '').trim();
   const orderBy = parseSortParam(sort, ALLOWED_SORT_FIELDS);
   const { skip, take } = buildPagination(page, limit);
 
@@ -88,12 +101,11 @@ export async function getDoctors(filters) {
     where.isActive = isActive;
   }
 
-  // Search on user firstName/lastName or specialization
-  if (search) {
+  // Search by clinician name or specialization
+  if (searchTerm) {
     where.OR = [
-      { user: { firstName: { contains: search, mode: 'insensitive' } } },
-      { user: { lastName: { contains: search, mode: 'insensitive' } } },
-      { specialization: { contains: search, mode: 'insensitive' } },
+      { user: { fullName: { contains: searchTerm, mode: 'insensitive' } } },
+      { specialization: { contains: searchTerm, mode: 'insensitive' } },
     ];
   }
 
@@ -107,84 +119,91 @@ export async function getDoctors(filters) {
 }
 
 /**
- * Update a doctor profile.
+ * Update a doctor profile (ADMIN only).
  */
 export async function updateDoctor(id, data, auditContext) {
   const existing = await doctorRepo.findById(id);
   if (!existing) {
-    throw new NotFoundError('Doctor not found');
+    throw new NotFoundError('Doctor', id);
   }
 
-  // Validate department if changed
+  const updateData = {};
+
+  // If userId is being changed, validate it
+  if (data.userId !== undefined && data.userId !== existing.userId) {
+    if (data.userId !== null) {
+      const user = await usersService.getUserById(data.userId);
+      if (user.role !== ROLES.CLINICIAN) {
+        throw new BusinessRuleError(
+          `User must have the ${ROLES.CLINICIAN} role to be registered as a doctor`,
+          [{ field: 'userId', message: `User has role '${user.role}' instead of '${ROLES.CLINICIAN}'` }],
+        );
+      }
+
+      const existingProfile = await doctorRepo.findByUserId(data.userId);
+      if (existingProfile && existingProfile.id !== id) {
+        throw new ConflictError('This user already has a doctor profile');
+      }
+    }
+    updateData.userId = data.userId;
+  }
+
+  // If departmentId is changed, verify it exists
   if (data.departmentId && data.departmentId !== existing.departmentId) {
     await departmentsService.getDepartmentById(data.departmentId);
+    updateData.departmentId = data.departmentId;
   }
 
-  // Check license number uniqueness if changed
+  // If licenseNumber is changed, check uniqueness
   if (data.licenseNumber && data.licenseNumber !== existing.licenseNumber) {
-    const duplicate = await doctorRepo.findByLicenseNumber(data.licenseNumber);
-    if (duplicate) {
-      throw new ConflictError(`A doctor with license number "${data.licenseNumber}" already exists`);
+    const trimmedLicense = data.licenseNumber.trim();
+    const duplicate = await doctorRepo.findByLicenseNumber(trimmedLicense);
+    if (duplicate && duplicate.id !== id) {
+      throw new ConflictError(`A doctor with license number "${trimmedLicense}" already exists`);
     }
+    updateData.licenseNumber = trimmedLicense;
   }
 
-  // Build changedFields for audit
+  if (data.specialization !== undefined) {
+    updateData.specialization = data.specialization.trim();
+  }
+
+  if (data.slotDurationMin !== undefined) {
+    updateData.slotDurationMin = data.slotDurationMin;
+  }
+
+  if (data.consultationFee !== undefined) {
+    updateData.consultationFee = data.consultationFee;
+  }
+
+  if (data.isActive !== undefined) {
+    updateData.isActive = data.isActive;
+  }
+
+  // Build changes diff
   const changedFields = {};
-  for (const key of Object.keys(data)) {
-    if (data[key] !== existing[key]) {
-      changedFields[key] = { old: existing[key], new: data[key] };
+  for (const key of Object.keys(updateData)) {
+    if (String(updateData[key]) !== String(existing[key])) {
+      changedFields[key] = { old: existing[key], new: updateData[key] };
     }
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const result = await doctorRepo.update(id, data, tx);
-
-    await auditRepo.createAuditLog(
-      {
-        userId: auditContext.userId,
-        role: auditContext.role,
-        action: 'UPDATE',
-        entity: 'Doctor',
-        entityId: id,
-        changedFields: Object.keys(changedFields).length > 0 ? changedFields : undefined,
-        ip: auditContext.ip,
-        userAgent: auditContext.userAgent,
-        requestId: auditContext.requestId,
-      },
-      tx,
-    );
-
-    return result;
-  });
-
-  return updated;
-}
-
-/**
- * Soft delete a doctor (set isActive = false).
- */
-export async function deleteDoctor(id, auditContext) {
-  const existing = await doctorRepo.findById(id);
-  if (!existing) {
-    throw new NotFoundError('Doctor not found');
+  if (Object.keys(changedFields).length === 0) {
+    return existing;
   }
 
-  await prisma.$transaction(async (tx) => {
-    await doctorRepo.update(id, { isActive: false }, tx);
+  return prisma.$transaction(async (tx) => {
+    const updated = await doctorRepo.update(id, updateData, tx);
 
-    await auditRepo.createAuditLog(
-      {
-        userId: auditContext.userId,
-        role: auditContext.role,
-        action: 'DELETE',
-        entity: 'Doctor',
-        entityId: id,
-        changedFields: { isActive: { old: existing.isActive, new: false } },
-        ip: auditContext.ip,
-        userAgent: auditContext.userAgent,
-        requestId: auditContext.requestId,
-      },
+    await auditService.record({
       tx,
-    );
+      actor: auditContext,
+      action: 'UPDATE',
+      entity: 'Doctor',
+      entityId: id,
+      changes: changedFields,
+    });
+
+    return updated;
   });
 }

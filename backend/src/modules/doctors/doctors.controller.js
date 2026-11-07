@@ -1,21 +1,18 @@
 import * as doctorService from './doctors.service.js';
-import { success, created, noContent, paginated } from '../../common/utils/response.js';
+import { success, created, paginated } from '../../common/utils/response.js';
 
-/**
- * Extract audit context from the request.
- */
 function auditCtx(req) {
   return {
-    userId: req.user.id,
+    id: req.user.id,
     role: req.user.role,
     ip: req.ip,
-    userAgent: req.get('user-agent'),
-    requestId: req.id,
+    userAgent: req.get('user-agent') ?? null,
+    requestId: req.id ?? null,
   };
 }
 
 /**
- * POST / — create a doctor profile.
+ * POST /doctors — create a doctor profile (ADMIN).
  */
 export async function create(req, res) {
   const doctor = await doctorService.createDoctor(req.body, auditCtx(req));
@@ -23,7 +20,7 @@ export async function create(req, res) {
 }
 
 /**
- * GET /:id — get a doctor by ID.
+ * GET /doctors/:id — get doctor by ID (all authenticated roles).
  */
 export async function getById(req, res) {
   const doctor = await doctorService.getDoctorById(req.params.id);
@@ -31,7 +28,7 @@ export async function getById(req, res) {
 }
 
 /**
- * GET / — list doctors (paginated).
+ * GET /doctors — list doctors with filters and pagination (all authenticated roles).
  */
 export async function list(req, res) {
   const { data, meta } = await doctorService.getDoctors(req.query);
@@ -39,17 +36,9 @@ export async function list(req, res) {
 }
 
 /**
- * PATCH /:id — update a doctor profile.
+ * PATCH /doctors/:id — update a doctor profile (ADMIN).
  */
 export async function update(req, res) {
   const doctor = await doctorService.updateDoctor(req.params.id, req.body, auditCtx(req));
   return success(res, doctor);
-}
-
-/**
- * DELETE /:id — soft delete a doctor.
- */
-export async function remove(req, res) {
-  await doctorService.deleteDoctor(req.params.id, auditCtx(req));
-  return noContent(res);
 }

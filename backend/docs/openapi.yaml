@@ -3,8 +3,8 @@ info:
   title: Hospital Management System (HMS) REST API
   version: 1.0.0
   description: |
-    Production-ready REST API for clinical administration, appointments, patient management,
-    billing, and role-based access control.
+    Production-ready REST API for clinical administration, staff directory, appointments,
+    patient management, billing, and strict role-based access control (RBAC).
 servers:
   - url: http://localhost:3000/api/v1
     description: Local Development Server
@@ -15,7 +15,6 @@ paths:
       tags:
         - System Health
       summary: Health check & PostgreSQL connectivity status
-      description: Returns uptime, API health status, and live database connection state.
       responses:
         '200':
           description: System and database are healthy.
@@ -31,7 +30,6 @@ paths:
       tags:
         - Authentication
       summary: User Login
-      description: Authenticates user credentials and returns JWT access and refresh tokens.
       requestBody:
         required: true
         content:
@@ -44,81 +42,30 @@ paths:
               properties:
                 email:
                   type: string
-                  format: email
                   example: admin@hms.test
                 password:
                   type: string
-                  format: password
                   example: Admin@12345
       responses:
         '200':
           description: Login successful
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthResponse'
-        '401':
-          description: Invalid email or password
 
   /auth/me:
     get:
       tags:
         - Authentication
       summary: Current Session Profile
-      description: Returns details of the currently authenticated user.
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Current authenticated user details
-
-  /auth/refresh:
-    post:
-      tags:
-        - Authentication
-      summary: Refresh Access Token
-      description: Exchanges a valid refresh token for a fresh short-lived access token.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - refreshToken
-              properties:
-                refreshToken:
-                  type: string
-      responses:
-        '200':
-          description: Fresh access token generated
-
-  /auth/logout:
-    post:
-      tags:
-        - Authentication
-      summary: Logout
-      description: Revokes active session and invalidates refresh token.
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                refreshToken:
-                  type: string
-      responses:
-        '200':
-          description: Successfully logged out
+          description: Current user profile
 
   /users:
     get:
       tags:
-        - Users
-      summary: List users (Admin only)
+        - Users (ADMIN only)
+      summary: List users (search, role filter, pagination)
       security:
         - bearerAuth: []
       parameters:
@@ -136,14 +83,23 @@ paths:
           in: query
           schema:
             type: string
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [ADMIN, FRONT_DESK, CLINICIAN]
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
       responses:
         '200':
-          description: List of staff users
+          description: Paginated users list (without passwordHash)
 
     post:
       tags:
-        - Users
-      summary: Create new staff user (Admin only)
+        - Users (ADMIN only)
+      summary: Create new staff user
       security:
         - bearerAuth: []
       requestBody:
@@ -155,19 +111,19 @@ paths:
               required:
                 - email
                 - password
-                - firstName
-                - lastName
+                - fullName
                 - role
               properties:
                 email:
                   type: string
                   format: email
+                  example: nurse.mary@hms.test
                 password:
                   type: string
-                firstName:
+                  example: Password@123
+                fullName:
                   type: string
-                lastName:
-                  type: string
+                  example: Mary Poppins
                 role:
                   type: string
                   enum: [ADMIN, FRONT_DESK, CLINICIAN]
@@ -175,82 +131,11 @@ paths:
         '201':
           description: User created
 
-  /patients:
+  /users/{id}:
     get:
       tags:
-        - Patients
-      summary: List / Search Patients
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: page
-          in: query
-          schema:
-            type: integer
-            default: 1
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 10
-        - name: search
-          in: query
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Paginated patient list
-
-    post:
-      tags:
-        - Patients
-      summary: Register New Patient
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - firstName
-                - lastName
-                - dateOfBirth
-                - phone
-              properties:
-                firstName:
-                  type: string
-                  example: Aarav
-                lastName:
-                  type: string
-                  example: Mehta
-                dateOfBirth:
-                  type: string
-                  format: date
-                  example: 1988-04-12
-                gender:
-                  type: string
-                  enum: [MALE, FEMALE, OTHER]
-                phone:
-                  type: string
-                  example: "+919876543210"
-                email:
-                  type: string
-                  format: email
-                  example: aarav.mehta@example.com
-                bloodGroup:
-                  type: string
-                  example: O_POSITIVE
-      responses:
-        '201':
-          description: Patient created successfully
-
-  /patients/{id}:
-    get:
-      tags:
-        - Patients
-      summary: Get Patient by ID
+        - Users (ADMIN only)
+      summary: Get user by ID
       security:
         - bearerAuth: []
       parameters:
@@ -262,23 +147,85 @@ paths:
             format: uuid
       responses:
         '200':
-          description: Patient details
+          description: User details (without passwordHash)
+
+    patch:
+      tags:
+        - Users (ADMIN only)
+      summary: Update user (role, isActive, fullName)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullName:
+                  type: string
+                  example: Mary Jane
+                role:
+                  type: string
+                  enum: [ADMIN, FRONT_DESK, CLINICIAN]
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: User updated
+
+  /users/{id}/reset-password:
+    post:
+      tags:
+        - Users (ADMIN only)
+      summary: Reset user password
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newPassword
+              properties:
+                newPassword:
+                  type: string
+                  example: NewPass@999
+      responses:
+        '200':
+          description: Password reset successfully
 
   /departments:
     get:
       tags:
         - Departments
-      summary: List all clinical departments
+      summary: List all departments (all authenticated roles)
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Department list
+          description: List of departments
 
     post:
       tags:
         - Departments
-      summary: Create clinical department (Admin only)
+      summary: Create clinical department (ADMIN only)
       security:
         - bearerAuth: []
       requestBody:
@@ -292,75 +239,19 @@ paths:
               properties:
                 name:
                   type: string
-                  example: Cardiology
+                  example: Neurology
                 description:
                   type: string
-                  example: Heart and cardiovascular health
+                  example: Disorders of the nervous system
       responses:
         '201':
           description: Department created
 
-  /doctors:
+  /departments/{id}:
     get:
       tags:
-        - Doctors
-      summary: List doctors
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: departmentId
-          in: query
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: List of doctors
-
-    post:
-      tags:
-        - Doctors
-      summary: Onboard doctor profile (Admin only)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - userId
-                - departmentId
-                - specialization
-                - licenseNumber
-                - consultationFee
-              properties:
-                userId:
-                  type: string
-                  format: uuid
-                departmentId:
-                  type: string
-                  format: uuid
-                specialization:
-                  type: string
-                  example: Cardiologist
-                licenseNumber:
-                  type: string
-                  example: MCI-2024-88421
-                consultationFee:
-                  type: integer
-                  description: Fee in paise (e.g. 50000 = ₹500)
-                  example: 50000
-      responses:
-        '201':
-          description: Doctor profile created
-
-  /doctors/{id}:
-    get:
-      tags:
-        - Doctors
-      summary: Get Doctor profile by ID
+        - Departments
+      summary: Get department details by ID (all authenticated roles)
       security:
         - bearerAuth: []
       parameters:
@@ -372,34 +263,77 @@ paths:
             format: uuid
       responses:
         '200':
-          description: Doctor profile with department and schedule
+          description: Department details
 
-  /appointments:
-    get:
+    patch:
       tags:
-        - Appointments
-      summary: List appointments
+        - Departments
+      summary: Update department (ADMIN only; 422 if deactivating with active doctors)
       security:
         - bearerAuth: []
       parameters:
-        - name: date
-          in: query
+        - name: id
+          in: path
+          required: true
           schema:
             type: string
-            format: date
-        - name: doctorId
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Department updated
+        '422':
+          description: Cannot deactivate department with active doctors
+
+  /doctors:
+    get:
+      tags:
+        - Doctors
+      summary: List doctors (filters: departmentId, search by name/specialization, isActive; pagination)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: departmentId
           in: query
           schema:
             type: string
             format: uuid
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
       responses:
         '200':
-          description: Appointments list
+          description: Paginated doctors list
 
     post:
       tags:
-        - Appointments
-      summary: Book an appointment
+        - Doctors
+      summary: Create doctor profile (ADMIN only)
       security:
         - bearerAuth: []
       requestBody:
@@ -409,37 +343,162 @@ paths:
             schema:
               type: object
               required:
-                - patientId
-                - doctorId
-                - appointmentDate
-                - startTime
-                - endTime
+                - departmentId
+                - specialization
+                - licenseNumber
+                - consultationFee
               properties:
-                patientId:
+                userId:
                   type: string
                   format: uuid
-                doctorId:
+                  description: Optional CLINICIAN user id to link (one-to-one)
+                departmentId:
                   type: string
                   format: uuid
-                appointmentDate:
+                specialization:
                   type: string
-                  format: date
-                  example: 2026-11-10
-                startTime:
+                  example: Neurologist
+                licenseNumber:
                   type: string
-                  example: "09:00"
-                endTime:
-                  type: string
-                  example: "09:30"
+                  example: MED-NEURO-2026
+                slotDurationMin:
+                  type: integer
+                  default: 30
+                consultationFee:
+                  type: number
+                  example: 1500
       responses:
         '201':
-          description: Appointment booked
+          description: Doctor created
 
-  /audit-logs:
+  /doctors/{id}:
     get:
       tags:
-        - Audit Logs
-      summary: Retrieve system audit logs (Admin only)
+        - Doctors
+      summary: Get doctor by ID (all authenticated roles)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Doctor profile
+
+    patch:
+      tags:
+        - Doctors
+      summary: Update doctor profile (ADMIN only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                departmentId:
+                  type: string
+                  format: uuid
+                specialization:
+                  type: string
+                licenseNumber:
+                  type: string
+                slotDurationMin:
+                  type: integer
+                consultationFee:
+                  type: number
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Doctor updated
+
+  /doctors/{id}/schedules:
+    get:
+      tags:
+        - Schedules
+      summary: Get doctor weekly schedules (all authenticated roles)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Weekly schedules list
+
+    put:
+      tags:
+        - Schedules
+      summary: Replace doctor weekly schedules atomically (ADMIN only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                required:
+                  - dayOfWeek
+                  - startTime
+                  - endTime
+                properties:
+                  dayOfWeek:
+                    type: integer
+                    description: 0 (Sun) to 6 (Sat)
+                    example: 1
+                  startTime:
+                    type: string
+                    example: "09:00"
+                  endTime:
+                    type: string
+                    example: "13:00"
+                  isActive:
+                    type: boolean
+                    default: true
+      responses:
+        '200':
+          description: Schedules replaced successfully
+        '400':
+          description: Invalid times or startTime not before endTime
+        '422':
+          description: Overlapping windows or times not aligned to slot duration
+
+  /patients:
+    get:
+      tags:
+        - Patients
+      summary: List / Search patients (CLINICIAN scoped)
       security:
         - bearerAuth: []
       parameters:
@@ -453,17 +512,146 @@ paths:
           schema:
             type: integer
             default: 20
-        - name: entity
+        - name: q
           in: query
           schema:
             type: string
-        - name: action
+            description: Search across name, phone, or MRN
+        - name: gender
           in: query
           schema:
             type: string
+            enum: [MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY]
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
       responses:
         '200':
-          description: Paginated audit entries
+          description: Paginated patient directory
+
+    post:
+      tags:
+        - Patients
+      summary: Register new patient (FRONT_DESK, ADMIN; auto-generates safe MRN)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - firstName
+                - lastName
+                - dateOfBirth
+                - gender
+                - phone
+              properties:
+                firstName:
+                  type: string
+                  example: Rohan
+                lastName:
+                  type: string
+                  example: Kapoor
+                dateOfBirth:
+                  type: string
+                  format: date
+                  example: 1990-05-20
+                gender:
+                  type: string
+                  enum: [MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY]
+                phone:
+                  type: string
+                  example: "+919876543210"
+                email:
+                  type: string
+                  format: email
+                  example: rohan.kapoor@example.com
+                address:
+                  type: string
+                  example: "42 MG Road, Bengaluru"
+      responses:
+        '201':
+          description: Patient created with auto-generated MRN
+
+  /patients/{id}:
+    get:
+      tags:
+        - Patients
+      summary: Get patient details by ID (audited; CLINICIAN scoped: 403 if unlinked)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Comprehensive patient record
+        '403':
+          description: Clinician does not have appointment/visit access to this patient
+
+    patch:
+      tags:
+        - Patients
+      summary: Update patient record (FRONT_DESK, ADMIN; audited)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                phone:
+                  type: string
+                email:
+                  type: string
+                address:
+                  type: string
+                emergencyContactName:
+                  type: string
+                emergencyContactPhone:
+                  type: string
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Patient updated
+
+    delete:
+      tags:
+        - Patients
+      summary: Soft delete patient (ADMIN only; sets isActive = false; audited)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Patient soft-deleted successfully
 
 components:
   securitySchemes:
@@ -479,40 +667,6 @@ components:
         status:
           type: string
           example: ok
-        uptime:
-          type: integer
-          example: 45
-        timestamp:
-          type: string
-          example: 2026-11-07T07:40:00.000Z
         database:
           type: string
           example: connected
-
-    AuthResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-          example: true
-        data:
-          type: object
-          properties:
-            user:
-              type: object
-              properties:
-                id:
-                  type: string
-                email:
-                  type: string
-                role:
-                  type: string
-                firstName:
-                  type: string
-                lastName:
-                  type: string
-            accessToken:
-              type: string
-            refreshToken:
-              type: string
-

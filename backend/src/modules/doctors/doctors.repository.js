@@ -3,8 +3,7 @@ import prisma from '../../infra/prisma.js';
 /** Select clause for user relation (never expose passwordHash). */
 const userSelect = {
   id: true,
-  firstName: true,
-  lastName: true,
+  fullName: true,
   email: true,
   role: true,
 };
@@ -46,6 +45,7 @@ export async function findById(id) {
  * Find a doctor by userId.
  */
 export async function findByUserId(userId) {
+  if (!userId) return null;
   return prisma.doctor.findUnique({
     where: { userId },
     include: {

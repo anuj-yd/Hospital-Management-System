@@ -25,6 +25,18 @@ export async function findByName(name) {
 }
 
 /**
+ * Count active doctors affiliated with this department.
+ */
+export async function countActiveDoctors(departmentId) {
+  return prisma.doctor.count({
+    where: {
+      departmentId,
+      isActive: true,
+    },
+  });
+}
+
+/**
  * Find all departments with pagination, search and isActive filter.
  */
 export async function findAll(filters) {

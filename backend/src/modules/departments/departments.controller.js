@@ -1,21 +1,18 @@
 import * as departmentService from './departments.service.js';
-import { success, created, noContent, paginated } from '../../common/utils/response.js';
+import { success, created, paginated } from '../../common/utils/response.js';
 
-/**
- * Extract audit context from the request.
- */
 function auditCtx(req) {
   return {
-    userId: req.user.id,
+    id: req.user.id,
     role: req.user.role,
     ip: req.ip,
-    userAgent: req.get('user-agent'),
-    requestId: req.id,
+    userAgent: req.get('user-agent') ?? null,
+    requestId: req.id ?? null,
   };
 }
 
 /**
- * POST / — create a department.
+ * POST /departments — create a department (ADMIN).
  */
 export async function create(req, res) {
   const department = await departmentService.createDepartment(req.body, auditCtx(req));
@@ -23,7 +20,7 @@ export async function create(req, res) {
 }
 
 /**
- * GET /:id — get a department by ID.
+ * GET /departments/:id — get a department by ID (all authenticated roles).
  */
 export async function getById(req, res) {
   const department = await departmentService.getDepartmentById(req.params.id);
@@ -31,7 +28,7 @@ export async function getById(req, res) {
 }
 
 /**
- * GET / — list departments (paginated).
+ * GET /departments — list departments (all authenticated roles).
  */
 export async function list(req, res) {
   const { data, meta } = await departmentService.getDepartments(req.query);
@@ -39,17 +36,9 @@ export async function list(req, res) {
 }
 
 /**
- * PATCH /:id — update a department.
+ * PATCH /departments/:id — update a department (ADMIN).
  */
 export async function update(req, res) {
   const department = await departmentService.updateDepartment(req.params.id, req.body, auditCtx(req));
   return success(res, department);
-}
-
-/**
- * DELETE /:id — soft delete a department.
- */
-export async function remove(req, res) {
-  await departmentService.deleteDepartment(req.params.id, auditCtx(req));
-  return noContent(res);
 }

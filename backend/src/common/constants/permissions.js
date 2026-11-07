@@ -145,6 +145,7 @@ const PERMISSION_ALIASES = Object.freeze({
  */
 export function hasPermission(role, permissionKey) {
   if (!role) return false;
+  if (role === permissionKey) return true;
   const rolePerms = ROLE_PERMISSIONS[role] || [];
   if (rolePerms.includes(permissionKey)) return true;
 
