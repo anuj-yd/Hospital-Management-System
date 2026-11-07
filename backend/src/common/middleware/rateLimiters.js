@@ -34,7 +34,7 @@ export const loginLimiter = rateLimit({
  */
 export const generalLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 200,
+  max: process.env.NODE_ENV === 'test' ? 10000 : 200,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => {

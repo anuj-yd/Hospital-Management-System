@@ -195,16 +195,16 @@ export async function updateVisitNotes(id, data, auditContext) {
     throw new NotFoundError('Visit', id);
   }
 
-  // Immutability: only while OPEN
-  if (visit.status !== 'OPEN') {
-    throw new ConflictError('Cannot modify a closed visit. Closed visits are immutable.');
-  }
-
   // Ownership: only by owning clinician (or ADMIN)
   if (auditContext.role === ROLES.CLINICIAN) {
     if (!auditContext.doctorId || visit.doctorId !== auditContext.doctorId) {
       throw new ForbiddenError('Only the owning clinician can modify clinical notes for this visit');
     }
+  }
+
+  // Immutability: only while OPEN
+  if (visit.status !== 'OPEN') {
+    throw new ConflictError('Cannot modify a closed visit. Closed visits are immutable.');
   }
 
   const updateData = {};

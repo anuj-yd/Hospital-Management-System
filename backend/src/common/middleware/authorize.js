@@ -18,20 +18,24 @@ export function authorize(...permissions) {
   }
 
   return (req, _res, next) => {
-    if (!req.user || !req.user.role) {
-      throw new UnauthenticatedError('Authentication required to verify permissions');
-    }
+    try {
+      if (!req.user || !req.user.role) {
+        throw new UnauthenticatedError('Authentication required to verify permissions');
+      }
 
-    const isAllowed = permissions.some((permission) =>
-      hasPermission(req.user.role, permission),
-    );
-
-    if (!isAllowed) {
-      throw new ForbiddenError(
-        `Access denied. Role '${req.user.role}' lacks required permission: ${permissions.join(' or ')}`,
+      const isAllowed = permissions.some((permission) =>
+        hasPermission(req.user.role, permission),
       );
-    }
 
-    next();
+      if (!isAllowed) {
+        throw new ForbiddenError(
+          `Access denied. Role '${req.user.role}' lacks required permission: ${permissions.join(' or ')}`,
+        );
+      }
+
+      next();
+    } catch (err) {
+      next(err);
+    }
   };
 }
