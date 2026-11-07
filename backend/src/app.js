@@ -98,7 +98,9 @@ app.use(`${v1}/diagnostic-reports`, diagnosticReportRoutes);
 app.use(`${v1}/billing`, billingRoutes);
 app.use(`${v1}/invoices`, billingRoutes);
 app.use(`${v1}/audit-logs`, auditRoutes);
+app.use('/audit-logs', auditRoutes);
 app.use(`${v1}/reports`, reportRoutes);
+app.use('/reports', reportRoutes);
 
 // ── Error handling pipeline ─────────────────────────────────
 app.use(notFound);
