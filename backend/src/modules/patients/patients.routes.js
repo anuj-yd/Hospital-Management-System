@@ -10,6 +10,8 @@ import {
   patientIdParamSchema,
 } from './patients.schema.js';
 import * as controller from './patients.controller.js';
+import * as visitsController from '../visits/visits.controller.js';
+import { listPatientVisitsSchema } from '../visits/visits.schema.js';
 
 const router = Router();
 
@@ -36,6 +38,15 @@ router.get(
   authenticate,
   validate(patientIdParamSchema, 'params'),
   controller.getById,
+);
+
+// GET /patients/:patientId/visits (paginated visits for patient)
+router.get(
+  '/:patientId/visits',
+  authenticate,
+  validate(patientIdParamSchema, 'params'),
+  validate(listPatientVisitsSchema, 'query'),
+  visitsController.getPatientVisits,
 );
 
 // PATCH /patients/:id (FRONT_DESK, ADMIN)
