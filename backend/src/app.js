@@ -78,6 +78,7 @@ const checkHealth = async (_req, res) => {
 
 app.get('/health', checkHealth);
 app.get('/api/v1/health', checkHealth);
+app.get('/', (_req, res) => res.redirect('/api-docs'));
 
 // ── API documentation ───────────────────────────────────────
 mountSwagger(app);

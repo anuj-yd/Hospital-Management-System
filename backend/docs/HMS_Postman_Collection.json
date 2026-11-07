@@ -1,0 +1,436 @@
+{
+  "info": {
+    "_postman_id": "hms-api-collection-v1",
+    "name": "🏥 Hospital Management System (HMS) API",
+    "description": "Production-ready Postman collection for HMS REST API. Includes automatic JWT extraction on login/refresh.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. System Health",
+      "item": [
+        {
+          "name": "Health Check (Status & DB)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Checks server uptime and PostgreSQL live connectivity."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Authentication & Session",
+      "item": [
+        {
+          "name": "Login - ADMIN (Auto-saves Token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    if (json.data && json.data.accessToken) {",
+                  "        pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "        pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "        console.log('✅ Tokens automatically saved to collection variables!');",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@hms.test\",\n  \"password\": \"Admin@12345\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Logs in as System Administrator. Automatically stores accessToken & refreshToken into collection variables."
+          }
+        },
+        {
+          "name": "Login - CLINICIAN (Dr. Sharma)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"dr.sharma@hms.test\",\n  \"password\": \"Doctor@12345\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Login - FRONT_DESK (Sarah Jenkins)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"frontdesk1@hms.test\",\n  \"password\": \"FrontDesk@12345\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Login - Bad Credentials (Test 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@hms.test\",\n  \"password\": \"WrongPassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "Verifies that invalid password returns 401 with generic 'Invalid credentials' message."
+          }
+        },
+        {
+          "name": "Get Current User Profile (/auth/me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "me"]
+            },
+            "description": "Retrieves the currently authenticated user's role, affiliations, and status."
+          }
+        },
+        {
+          "name": "Refresh Token Rotation (/auth/refresh)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var json = pm.response.json();",
+                  "    pm.collectionVariables.set('accessToken', json.data.accessToken);",
+                  "    pm.collectionVariables.set('refreshToken', json.data.refreshToken);",
+                  "    console.log('🔄 New token pair rotated and saved!');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            },
+            "description": "Exchanges current refresh token for a fresh token pair. Revokes old token."
+          }
+        },
+        {
+          "name": "Logout (/auth/logout)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Patients",
+      "item": [
+        {
+          "name": "List Patients (Search & Pagination)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/patients?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "patients"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "search", "value": "Sharma", "disabled": true }
+              ]
+            },
+            "description": "Retrieves seeded synthetic patient records with pagination metadata."
+          }
+        },
+        {
+          "name": "Get Patient by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/patients/40000000-0000-0000-0000-000000000001",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "patients", "40000000-0000-0000-0000-000000000001"]
+            }
+          }
+        },
+        {
+          "name": "Register New Patient",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Rohit\",\n  \"lastName\": \"Verma\",\n  \"dateOfBirth\": \"1992-05-15\",\n  \"gender\": \"MALE\",\n  \"phone\": \"+919876543219\",\n  \"email\": \"rohit.verma@example.test\",\n  \"address\": \"42 Indiranagar, Bengaluru, KA\",\n  \"emergencyContactName\": \"Sunita Verma\",\n  \"emergencyContactPhone\": \"+919876543210\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/patients",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "patients"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Departments & Doctors",
+      "item": [
+        {
+          "name": "List Departments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/departments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "departments"]
+            }
+          }
+        },
+        {
+          "name": "List Doctors",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/doctors",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "doctors"]
+            }
+          }
+        },
+        {
+          "name": "Get Doctor by ID (Dr. Sharma)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/doctors/30000000-0000-0000-0000-000000000001",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "doctors", "30000000-0000-0000-0000-000000000001"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. User Administration & Audit Logs",
+      "item": [
+        {
+          "name": "List Staff Users (ADMIN only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users"]
+            }
+          }
+        },
+        {
+          "name": "List Audit Logs (ADMIN only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/audit-logs?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "audit-logs"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Inspects system-wide compliance logs with old/new state diffs."
+          }
+        }
+      ]
+    }
+  ]
+}
+
