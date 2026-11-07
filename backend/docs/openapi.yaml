@@ -1211,6 +1211,290 @@ paths:
         '200':
           description: Report updated
 
+  /invoices:
+    post:
+      tags:
+        - Billing & Invoices
+      summary: Create DRAFT invoice (FRONT_DESK, ADMIN)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - patientId
+              properties:
+                patientId:
+                  type: string
+                  format: uuid
+                visitId:
+                  type: string
+                  format: uuid
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - description
+                      - unitPrice
+                    properties:
+                      description:
+                        type: string
+                        example: Consultation Fee
+                      quantity:
+                        type: integer
+                        default: 1
+                      unitPrice:
+                        type: number
+                        example: 1500.00
+                taxPercent:
+                  type: number
+                  default: 0
+                  example: 10
+                discountAmount:
+                  type: number
+                  default: 0
+                  example: 100
+      responses:
+        '201':
+          description: Invoice created in DRAFT status
+        '403':
+          description: Forbidden (CLINICIAN denied)
+        '422':
+          description: Validation error (discount exceeds subtotal + tax)
+
+    get:
+      tags:
+        - Billing & Invoices
+      summary: List invoices with filters and pagination (FRONT_DESK, ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, ISSUED, PARTIALLY_PAID, PAID, VOID]
+        - name: patientId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated invoices with balanceDue
+
+  /invoices/{id}:
+    get:
+      tags:
+        - Billing & Invoices
+      summary: Get invoice details with line items, payments, and balanceDue
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice record
+        '403':
+          description: Forbidden (CLINICIAN denied)
+        '404':
+          description: Invoice not found
+
+  /invoices/{id}/items:
+    post:
+      tags:
+        - Billing & Invoices
+      summary: Add line item to DRAFT invoice (recomputes totals)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - description
+                - unitPrice
+              properties:
+                description:
+                  type: string
+                  example: Ultrasound Abdomen
+                quantity:
+                  type: integer
+                  default: 1
+                unitPrice:
+                  type: number
+                  example: 1200.00
+      responses:
+        '201':
+          description: Item added and totals recomputed
+        '409':
+          description: Invoice is not in DRAFT status
+
+  /invoices/{id}/items/{itemId}:
+    delete:
+      tags:
+        - Billing & Invoices
+      summary: Remove line item from DRAFT invoice (recomputes totals)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Item deleted and totals recomputed
+        '409':
+          description: Invoice is not in DRAFT status
+
+  /invoices/{id}/issue:
+    post:
+      tags:
+        - Billing & Invoices
+      summary: Issue DRAFT invoice (locks items and amounts)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice transitioned to ISSUED status
+        '409':
+          description: Invoice not in DRAFT status
+        '422':
+          description: Invoice has zero items
+
+  /invoices/{id}/payments:
+    post:
+      tags:
+        - Billing & Invoices
+      summary: Process payment against ISSUED or PARTIALLY_PAID invoice (Idempotent, row-locked)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+                - method
+              properties:
+                amount:
+                  type: number
+                  example: 1000.00
+                method:
+                  type: string
+                  enum: [CASH, CARD, UPI, INSURANCE]
+                simulateOutcome:
+                  type: string
+                  enum: [success, fail]
+                  default: success
+      responses:
+        '201':
+          description: Payment processed
+        '409':
+          description: Idempotency conflict
+        '422':
+          description: Overpayment or invalid invoice status
+
+    get:
+      tags:
+        - Billing & Invoices
+      summary: List all payment attempts and records for invoice
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payments list
+
+  /invoices/{id}/void:
+    post:
+      tags:
+        - Billing & Invoices
+      summary: Void an invoice (ADMIN only; 0 succeeded payments)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice marked VOID
+        '403':
+          description: Forbidden (FRONT_DESK and CLINICIAN denied)
+        '422':
+          description: Cannot void invoice with succeeded payments or invalid status
+
 
 components:
   securitySchemes:
