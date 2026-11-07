@@ -96,6 +96,7 @@ app.use(`${v1}/visits`, visitRoutes);
 app.use(`${v1}/prescriptions`, prescriptionRoutes);
 app.use(`${v1}/diagnostic-reports`, diagnosticReportRoutes);
 app.use(`${v1}/billing`, billingRoutes);
+app.use(`${v1}/invoices`, billingRoutes);
 app.use(`${v1}/audit-logs`, auditRoutes);
 app.use(`${v1}/reports`, reportRoutes);
 
