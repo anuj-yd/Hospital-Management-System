@@ -1,0 +1,1839 @@
+openapi: 3.0.3
+info:
+  title: Hospital Management System (HMS) REST API
+  version: 1.0.0
+  description: |
+    Production-ready REST API for clinical administration, staff directory, appointments,
+    patient management, billing, and strict role-based access control (RBAC).
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local Development Server
+
+paths:
+  /health:
+    get:
+      tags:
+        - System Health
+      summary: Health check & PostgreSQL connectivity status
+      responses:
+        '200':
+          description: System and database are healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Database disconnected or degraded.
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  example: admin@hms.test
+                password:
+                  type: string
+                  example: Admin@12345
+      responses:
+        '200':
+          description: Login successful
+
+  /auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Current Session Profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user profile
+
+  /users:
+    get:
+      tags:
+        - Users (ADMIN only)
+      summary: List users (search, role filter, pagination)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [ADMIN, FRONT_DESK, CLINICIAN]
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Paginated users list (without passwordHash)
+
+    post:
+      tags:
+        - Users (ADMIN only)
+      summary: Create new staff user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - fullName
+                - role
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: nurse.mary@hms.test
+                password:
+                  type: string
+                  example: Password@123
+                fullName:
+                  type: string
+                  example: Mary Poppins
+                role:
+                  type: string
+                  enum: [ADMIN, FRONT_DESK, CLINICIAN]
+      responses:
+        '201':
+          description: User created
+
+  /users/{id}:
+    get:
+      tags:
+        - Users (ADMIN only)
+      summary: Get user by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User details (without passwordHash)
+
+    patch:
+      tags:
+        - Users (ADMIN only)
+      summary: Update user (role, isActive, fullName)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullName:
+                  type: string
+                  example: Mary Jane
+                role:
+                  type: string
+                  enum: [ADMIN, FRONT_DESK, CLINICIAN]
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: User updated
+
+  /users/{id}/reset-password:
+    post:
+      tags:
+        - Users (ADMIN only)
+      summary: Reset user password
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newPassword
+              properties:
+                newPassword:
+                  type: string
+                  example: NewPass@999
+      responses:
+        '200':
+          description: Password reset successfully
+
+  /departments:
+    get:
+      tags:
+        - Departments
+      summary: List all departments (all authenticated roles)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of departments
+
+    post:
+      tags:
+        - Departments
+      summary: Create clinical department (ADMIN only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  example: Neurology
+                description:
+                  type: string
+                  example: Disorders of the nervous system
+      responses:
+        '201':
+          description: Department created
+
+  /departments/{id}:
+    get:
+      tags:
+        - Departments
+      summary: Get department details by ID (all authenticated roles)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Department details
+
+    patch:
+      tags:
+        - Departments
+      summary: Update department (ADMIN only; 422 if deactivating with active doctors)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Department updated
+        '422':
+          description: Cannot deactivate department with active doctors
+
+  /doctors:
+    get:
+      tags:
+        - Doctors
+      summary: List doctors (filters: departmentId, search by name/specialization, isActive; pagination)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+        - name: departmentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Paginated doctors list
+
+    post:
+      tags:
+        - Doctors
+      summary: Create doctor profile (ADMIN only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - departmentId
+                - specialization
+                - licenseNumber
+                - consultationFee
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                  description: Optional CLINICIAN user id to link (one-to-one)
+                departmentId:
+                  type: string
+                  format: uuid
+                specialization:
+                  type: string
+                  example: Neurologist
+                licenseNumber:
+                  type: string
+                  example: MED-NEURO-2026
+                slotDurationMin:
+                  type: integer
+                  default: 30
+                consultationFee:
+                  type: number
+                  example: 1500
+      responses:
+        '201':
+          description: Doctor created
+
+  /doctors/{id}:
+    get:
+      tags:
+        - Doctors
+      summary: Get doctor by ID (all authenticated roles)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Doctor profile
+
+    patch:
+      tags:
+        - Doctors
+      summary: Update doctor profile (ADMIN only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                departmentId:
+                  type: string
+                  format: uuid
+                specialization:
+                  type: string
+                licenseNumber:
+                  type: string
+                slotDurationMin:
+                  type: integer
+                consultationFee:
+                  type: number
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Doctor updated
+
+  /doctors/{id}/schedules:
+    get:
+      tags:
+        - Schedules
+      summary: Get doctor weekly schedules (all authenticated roles)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Weekly schedules list
+
+    put:
+      tags:
+        - Schedules
+      summary: Replace doctor weekly schedules atomically (ADMIN only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                required:
+                  - dayOfWeek
+                  - startTime
+                  - endTime
+                properties:
+                  dayOfWeek:
+                    type: integer
+                    description: 0 (Sun) to 6 (Sat)
+                    example: 1
+                  startTime:
+                    type: string
+                    example: "09:00"
+                  endTime:
+                    type: string
+                    example: "13:00"
+                  isActive:
+                    type: boolean
+                    default: true
+      responses:
+        '200':
+          description: Schedules replaced successfully
+        '400':
+          description: Invalid times or startTime not before endTime
+        '422':
+          description: Overlapping windows or times not aligned to slot duration
+
+  /doctors/{id}/slots:
+    get:
+      tags:
+        - Appointments
+      summary: Generate available slots for a doctor (CLINIC_TZ, max 14 days)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: date
+          in: query
+          schema:
+            type: string
+            example: 2026-11-10
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of available slots in UTC
+
+  /appointments:
+    get:
+      tags:
+        - Appointments
+      summary: List appointments (CLINICIAN scoped to own appointments)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: doctorId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: patientId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [SCHEDULED, CHECKED_IN, COMPLETED, CANCELLED, NO_SHOW]
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated appointments
+
+    post:
+      tags:
+        - Appointments
+      summary: Book an appointment (FRONT_DESK, ADMIN; with Idempotency)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - patientId
+                - doctorId
+                - startTime
+              properties:
+                patientId:
+                  type: string
+                  format: uuid
+                doctorId:
+                  type: string
+                  format: uuid
+                startTime:
+                  type: string
+                  format: date-time
+                  example: "2026-11-10T09:00:00.000Z"
+                reason:
+                  type: string
+      responses:
+        '201':
+          description: Appointment booked
+        '409':
+          description: SLOT_TAKEN (database unique index violation)
+        '422':
+          description: PATIENT_DOUBLE_BOOKED or slot misaligned to schedule
+
+  /appointments/{id}:
+    get:
+      tags:
+        - Appointments
+      summary: Get appointment by ID (CLINICIAN scoped)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Appointment details
+
+  /appointments/{id}/reschedule:
+    patch:
+      tags:
+        - Appointments
+      summary: Reschedule appointment (FRONT_DESK, ADMIN; max 3 times)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newStartTime
+              properties:
+                newStartTime:
+                  type: string
+                  format: date-time
+                  example: "2026-11-12T10:00:00.000Z"
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Appointment rescheduled
+        '409':
+          description: SLOT_TAKEN or INVALID_STATE_TRANSITION
+        '422':
+          description: Limit of 3 reached or PATIENT_DOUBLE_BOOKED
+
+  /appointments/{id}/cancel:
+    post:
+      tags:
+        - Appointments
+      summary: Cancel appointment (frees slot)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - cancelReason
+              properties:
+                cancelReason:
+                  type: string
+                  example: "Patient requested cancellation"
+      responses:
+        '200':
+          description: Appointment cancelled
+
+  /appointments/{id}/check-in:
+    post:
+      tags:
+        - Appointments
+      summary: Check in appointment (FRONT_DESK; only on appointment date in CLINIC_TZ)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Checked in
+        '422':
+          description: Not appointment date
+
+  /appointments/{id}/no-show:
+    post:
+      tags:
+        - Appointments
+      summary: Mark appointment as no-show (FRONT_DESK; only after start time passed)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Marked as NO_SHOW
+        '422':
+          description: Appointment start time not yet passed
+
+
+  /patients:
+    get:
+      tags:
+        - Patients
+      summary: List / Search patients (CLINICIAN scoped)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: q
+          in: query
+          schema:
+            type: string
+            description: Search across name, phone, or MRN
+        - name: gender
+          in: query
+          schema:
+            type: string
+            enum: [MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY]
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Paginated patient directory
+
+    post:
+      tags:
+        - Patients
+      summary: Register new patient (FRONT_DESK, ADMIN; auto-generates safe MRN)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - firstName
+                - lastName
+                - dateOfBirth
+                - gender
+                - phone
+              properties:
+                firstName:
+                  type: string
+                  example: Rohan
+                lastName:
+                  type: string
+                  example: Kapoor
+                dateOfBirth:
+                  type: string
+                  format: date
+                  example: 1990-05-20
+                gender:
+                  type: string
+                  enum: [MALE, FEMALE, OTHER, PREFER_NOT_TO_SAY]
+                phone:
+                  type: string
+                  example: "+919876543210"
+                email:
+                  type: string
+                  format: email
+                  example: rohan.kapoor@example.com
+                address:
+                  type: string
+                  example: "42 MG Road, Bengaluru"
+      responses:
+        '201':
+          description: Patient created with auto-generated MRN
+
+  /patients/{id}:
+    get:
+      tags:
+        - Patients
+      summary: Get patient details by ID (audited; CLINICIAN scoped: 403 if unlinked)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Comprehensive patient record
+        '403':
+          description: Clinician does not have appointment/visit access to this patient
+
+    patch:
+      tags:
+        - Patients
+      summary: Update patient record (FRONT_DESK, ADMIN; audited)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstName:
+                  type: string
+                lastName:
+                  type: string
+                phone:
+                  type: string
+                email:
+                  type: string
+                address:
+                  type: string
+                emergencyContactName:
+                  type: string
+                emergencyContactPhone:
+                  type: string
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Patient updated
+
+    delete:
+      tags:
+        - Patients
+      summary: Soft delete patient (ADMIN only; sets isActive = false; audited)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Patient soft-deleted successfully
+
+  /patients/{patientId}/visits:
+    get:
+      tags:
+        - Clinical Visits
+      summary: List visits for a patient (paginated; CLINICIAN scoped)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Paginated visits list
+
+  /visits:
+    post:
+      tags:
+        - Clinical Visits
+      summary: Initiate an OPEN clinical visit for a CHECKED_IN appointment (owning CLINICIAN, ADMIN)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - appointmentId
+              properties:
+                appointmentId:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Visit created with OPEN status
+        '403':
+          description: Forbidden (not owning clinician)
+        '409':
+          description: Visit already initiated for this appointment
+        '422':
+          description: Appointment not in CHECKED_IN status
+
+  /visits/{id}:
+    get:
+      tags:
+        - Clinical Visits
+      summary: Get visit by ID (CLINICIAN own only; FRONT_DESK metadata only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Visit record (clinical notes stripped for FRONT_DESK)
+        '403':
+          description: Forbidden (not owning clinician)
+
+    patch:
+      tags:
+        - Clinical Visits
+      summary: Update clinical notes (chiefComplaint, clinicalNotes; only while OPEN, owning CLINICIAN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                chiefComplaint:
+                  type: string
+                clinicalNotes:
+                  type: string
+      responses:
+        '200':
+          description: Notes updated
+        '409':
+          description: Cannot modify closed visit
+
+  /visits/{id}/close:
+    post:
+      tags:
+        - Clinical Visits
+      summary: Close visit (OPEN -> CLOSED, appointment moves to COMPLETED atomically)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Visit closed, appointment COMPLETED
+        '409':
+          description: Visit already closed
+
+  /visits/{id}/prescriptions:
+    get:
+      tags:
+        - Prescriptions
+      summary: List prescriptions for visit (CLINICIAN own, ADMIN; FRONT_DESK blocked)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Prescriptions list
+        '403':
+          description: Forbidden
+
+    post:
+      tags:
+        - Prescriptions
+      summary: Add prescription to visit (only while OPEN, owning CLINICIAN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - medication
+                - dosage
+                - frequency
+                - durationDays
+              properties:
+                medication:
+                  type: string
+                  example: "Amoxicillin"
+                dosage:
+                  type: string
+                  example: "500mg"
+                frequency:
+                  type: string
+                  example: "Three times daily"
+                durationDays:
+                  type: integer
+                  minimum: 1
+                  maximum: 365
+                  example: 7
+                instructions:
+                  type: string
+                  example: "Take after meals"
+      responses:
+        '201':
+          description: Prescription added
+        '409':
+          description: Visit is closed
+
+  /prescriptions/{id}:
+    patch:
+      tags:
+        - Prescriptions
+      summary: Modify prescription (only while visit OPEN, owning CLINICIAN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                medication:
+                  type: string
+                dosage:
+                  type: string
+                frequency:
+                  type: string
+                durationDays:
+                  type: integer
+                instructions:
+                  type: string
+      responses:
+        '200':
+          description: Prescription updated
+
+    delete:
+      tags:
+        - Prescriptions
+      summary: Remove prescription (only while visit OPEN, owning CLINICIAN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Prescription deleted
+
+  /visits/{id}/diagnostic-reports:
+    get:
+      tags:
+        - Diagnostic Reports
+      summary: List diagnostic reports for visit (CLINICIAN own, ADMIN; FRONT_DESK blocked)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Diagnostic reports list
+
+    post:
+      tags:
+        - Diagnostic Reports
+      summary: Order diagnostic report (metadata only, no file upload; only while visit OPEN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reportType
+              properties:
+                reportType:
+                  type: string
+                  example: "12-Lead ECG"
+                resultSummary:
+                  type: string
+                fileReference:
+                  type: string
+                  example: "RAD-ECG-2026-001"
+      responses:
+        '201':
+          description: Report ordered (status ORDERED)
+
+  /diagnostic-reports/{id}:
+    patch:
+      tags:
+        - Diagnostic Reports
+      summary: Update report status (ORDERED -> COMPLETED with resultSummary text, or ORDERED -> CANCELLED)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [COMPLETED, CANCELLED]
+                resultSummary:
+                  type: string
+                  example: "Normal sinus rhythm, heart rate 72 bpm"
+                fileReference:
+                  type: string
+      responses:
+        '200':
+          description: Report updated
+
+  /invoices:
+    post:
+      tags:
+        - Billing & Invoices
+      summary: Create DRAFT invoice (FRONT_DESK, ADMIN)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - patientId
+              properties:
+                patientId:
+                  type: string
+                  format: uuid
+                visitId:
+                  type: string
+                  format: uuid
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - description
+                      - unitPrice
+                    properties:
+                      description:
+                        type: string
+                        example: Consultation Fee
+                      quantity:
+                        type: integer
+                        default: 1
+                      unitPrice:
+                        type: number
+                        example: 1500.00
+                taxPercent:
+                  type: number
+                  default: 0
+                  example: 10
+                discountAmount:
+                  type: number
+                  default: 0
+                  example: 100
+      responses:
+        '201':
+          description: Invoice created in DRAFT status
+        '403':
+          description: Forbidden (CLINICIAN denied)
+        '422':
+          description: Validation error (discount exceeds subtotal + tax)
+
+    get:
+      tags:
+        - Billing & Invoices
+      summary: List invoices with filters and pagination (FRONT_DESK, ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [DRAFT, ISSUED, PARTIALLY_PAID, PAID, VOID]
+        - name: patientId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated invoices with balanceDue
+
+  /invoices/{id}:
+    get:
+      tags:
+        - Billing & Invoices
+      summary: Get invoice details with line items, payments, and balanceDue
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice record
+        '403':
+          description: Forbidden (CLINICIAN denied)
+        '404':
+          description: Invoice not found
+
+  /invoices/{id}/items:
+    post:
+      tags:
+        - Billing & Invoices
+      summary: Add line item to DRAFT invoice (recomputes totals)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - description
+                - unitPrice
+              properties:
+                description:
+                  type: string
+                  example: Ultrasound Abdomen
+                quantity:
+                  type: integer
+                  default: 1
+                unitPrice:
+                  type: number
+                  example: 1200.00
+      responses:
+        '201':
+          description: Item added and totals recomputed
+        '409':
+          description: Invoice is not in DRAFT status
+
+  /invoices/{id}/items/{itemId}:
+    delete:
+      tags:
+        - Billing & Invoices
+      summary: Remove line item from DRAFT invoice (recomputes totals)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Item deleted and totals recomputed
+        '409':
+          description: Invoice is not in DRAFT status
+
+  /invoices/{id}/issue:
+    post:
+      tags:
+        - Billing & Invoices
+      summary: Issue DRAFT invoice (locks items and amounts)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice transitioned to ISSUED status
+        '409':
+          description: Invoice not in DRAFT status
+        '422':
+          description: Invoice has zero items
+
+  /invoices/{id}/payments:
+    post:
+      tags:
+        - Billing & Invoices
+      summary: Process payment against ISSUED or PARTIALLY_PAID invoice (Idempotent, row-locked)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+                - method
+              properties:
+                amount:
+                  type: number
+                  example: 1000.00
+                method:
+                  type: string
+                  enum: [CASH, CARD, UPI, INSURANCE]
+                simulateOutcome:
+                  type: string
+                  enum: [success, fail]
+                  default: success
+      responses:
+        '201':
+          description: Payment processed
+        '409':
+          description: Idempotency conflict
+        '422':
+          description: Overpayment or invalid invoice status
+
+    get:
+      tags:
+        - Billing & Invoices
+      summary: List all payment attempts and records for invoice
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payments list
+
+  /invoices/{id}/void:
+    post:
+      tags:
+        - Billing & Invoices
+      summary: Void an invoice (ADMIN only; 0 succeeded payments)
+      description: Allowed only for DRAFT or ISSUED invoices with 0 succeeded payments. FRONT_DESK and CLINICIAN denied.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice marked VOID
+        '403':
+          description: Forbidden (FRONT_DESK and CLINICIAN denied)
+        '422':
+          description: Cannot void invoice with succeeded payments or invalid status
+
+  /reports/dashboard:
+    get:
+      tags:
+        - Reports & Analytics
+      summary: Get executive dashboard operational statistics
+      description: Allowed roles - ADMIN, FRONT_DESK. Provides today's appointments by status, upcoming 7 days count, new patients this month, outstanding balance total, and current month revenue.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      todayAppointments:
+                        type: object
+                        properties:
+                          byStatus:
+                            type: object
+                            properties:
+                              SCHEDULED:
+                                type: integer
+                                example: 4
+                              CHECKED_IN:
+                                type: integer
+                                example: 2
+                              COMPLETED:
+                                type: integer
+                                example: 6
+                              CANCELLED:
+                                type: integer
+                                example: 1
+                              NO_SHOW:
+                                type: integer
+                                example: 0
+                      upcoming7DaysCount:
+                        type: integer
+                        example: 18
+                      newPatientsThisMonth:
+                        type: integer
+                        example: 25
+                      outstandingBalanceTotal:
+                        type: string
+                        example: "4500.00"
+                      revenueThisMonth:
+                        type: string
+                        example: "38500.00"
+        '403':
+          description: Forbidden (CLINICIAN denied)
+
+  /reports/appointments-summary:
+    get:
+      tags:
+        - Reports & Analytics
+      summary: Aggregated appointment summaries with cancellation and no-show rates
+      description: Allowed roles - ADMIN only. Uses SQL aggregation (groupBy / $queryRaw).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          description: Start timestamp (ISO or YYYY-MM-DD)
+          schema:
+            type: string
+        - name: to
+          in: query
+          description: End timestamp (ISO or YYYY-MM-DD)
+          schema:
+            type: string
+        - name: groupBy
+          in: query
+          description: Aggregation dimension
+          schema:
+            type: string
+            enum: [day, doctor, department, status]
+            default: status
+      responses:
+        '200':
+          description: Aggregated appointment summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      summary:
+                        type: object
+                        properties:
+                          total:
+                            type: integer
+                            example: 50
+                          scheduled:
+                            type: integer
+                            example: 10
+                          checkedIn:
+                            type: integer
+                            example: 5
+                          completed:
+                            type: integer
+                            example: 30
+                          cancelled:
+                            type: integer
+                            example: 3
+                          noShow:
+                            type: integer
+                            example: 2
+                          cancellationRate:
+                            type: number
+                            example: 6.0
+                          noShowRate:
+                            type: number
+                            example: 4.0
+                      groupBy:
+                        type: string
+                        example: status
+                      breakdown:
+                        type: array
+                        items:
+                          type: object
+        '403':
+          description: Forbidden (FRONT_DESK and CLINICIAN denied)
+
+  /reports/billing-summary:
+    get:
+      tags:
+        - Reports & Analytics
+      summary: Aggregated financial billing and collection metrics
+      description: Allowed roles - ADMIN, FRONT_DESK. Provides invoiced total, collected total, outstanding balance, counts by status, and collections by payment method.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Billing summary metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      invoicedTotal:
+                        type: string
+                        example: "125000.00"
+                      collectedTotal:
+                        type: string
+                        example: "98000.00"
+                      outstandingBalance:
+                        type: string
+                        example: "27000.00"
+                      countByStatus:
+                        type: object
+                      collectionsByPaymentMethod:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            method:
+                              type: string
+                              example: UPI
+                            count:
+                              type: integer
+                              example: 35
+                            amount:
+                              type: string
+                              example: "45000.00"
+        '403':
+          description: Forbidden (CLINICIAN denied)
+
+  /audit-logs:
+    get:
+      tags:
+        - Audit Logs
+      summary: Query system audit logs (ADMIN only, read-only)
+      description: Allowed roles - ADMIN only. Read-only viewer for tracking mutations across entities, users, timestamps, and network origins.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: entity
+          in: query
+          description: Target model entity (e.g. Appointment, Invoice, Patient, Visit)
+          schema:
+            type: string
+        - name: entityId
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          description: Mutation action (e.g. CREATE, UPDATE, DELETE, STATUS_CHANGE, READ, PAYMENT_SUCCEEDED)
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated audit logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        userId:
+                          type: string
+                          format: uuid
+                        userRole:
+                          type: string
+                          example: ADMIN
+                        action:
+                          type: string
+                          example: STATUS_CHANGE
+                        entity:
+                          type: string
+                          example: Invoice
+                        entityId:
+                          type: string
+                        changes:
+                          type: object
+                        createdAt:
+                          type: string
+                          format: date-time
+                  meta:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      totalPages:
+                        type: integer
+        '403':
+          description: Forbidden (Only ADMIN permitted)
+
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        database:
+          type: string
+          example: connected
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: Validation failed
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  message:
+                    type: string

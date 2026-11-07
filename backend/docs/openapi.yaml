@@ -1478,6 +1478,7 @@ paths:
       tags:
         - Billing & Invoices
       summary: Void an invoice (ADMIN only; 0 succeeded payments)
+      description: Allowed only for DRAFT or ISSUED invoices with 0 succeeded payments. FRONT_DESK and CLINICIAN denied.
       security:
         - bearerAuth: []
       parameters:
@@ -1494,6 +1495,298 @@ paths:
           description: Forbidden (FRONT_DESK and CLINICIAN denied)
         '422':
           description: Cannot void invoice with succeeded payments or invalid status
+
+  /reports/dashboard:
+    get:
+      tags:
+        - Reports & Analytics
+      summary: Get executive dashboard operational statistics
+      description: Allowed roles - ADMIN, FRONT_DESK. Provides today's appointments by status, upcoming 7 days count, new patients this month, outstanding balance total, and current month revenue.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      todayAppointments:
+                        type: object
+                        properties:
+                          byStatus:
+                            type: object
+                            properties:
+                              SCHEDULED:
+                                type: integer
+                                example: 4
+                              CHECKED_IN:
+                                type: integer
+                                example: 2
+                              COMPLETED:
+                                type: integer
+                                example: 6
+                              CANCELLED:
+                                type: integer
+                                example: 1
+                              NO_SHOW:
+                                type: integer
+                                example: 0
+                      upcoming7DaysCount:
+                        type: integer
+                        example: 18
+                      newPatientsThisMonth:
+                        type: integer
+                        example: 25
+                      outstandingBalanceTotal:
+                        type: string
+                        example: "4500.00"
+                      revenueThisMonth:
+                        type: string
+                        example: "38500.00"
+        '403':
+          description: Forbidden (CLINICIAN denied)
+
+  /reports/appointments-summary:
+    get:
+      tags:
+        - Reports & Analytics
+      summary: Aggregated appointment summaries with cancellation and no-show rates
+      description: Allowed roles - ADMIN only. Uses SQL aggregation (groupBy / $queryRaw).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          description: Start timestamp (ISO or YYYY-MM-DD)
+          schema:
+            type: string
+        - name: to
+          in: query
+          description: End timestamp (ISO or YYYY-MM-DD)
+          schema:
+            type: string
+        - name: groupBy
+          in: query
+          description: Aggregation dimension
+          schema:
+            type: string
+            enum: [day, doctor, department, status]
+            default: status
+      responses:
+        '200':
+          description: Aggregated appointment summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      summary:
+                        type: object
+                        properties:
+                          total:
+                            type: integer
+                            example: 50
+                          scheduled:
+                            type: integer
+                            example: 10
+                          checkedIn:
+                            type: integer
+                            example: 5
+                          completed:
+                            type: integer
+                            example: 30
+                          cancelled:
+                            type: integer
+                            example: 3
+                          noShow:
+                            type: integer
+                            example: 2
+                          cancellationRate:
+                            type: number
+                            example: 6.0
+                          noShowRate:
+                            type: number
+                            example: 4.0
+                      groupBy:
+                        type: string
+                        example: status
+                      breakdown:
+                        type: array
+                        items:
+                          type: object
+        '403':
+          description: Forbidden (FRONT_DESK and CLINICIAN denied)
+
+  /reports/billing-summary:
+    get:
+      tags:
+        - Reports & Analytics
+      summary: Aggregated financial billing and collection metrics
+      description: Allowed roles - ADMIN, FRONT_DESK. Provides invoiced total, collected total, outstanding balance, counts by status, and collections by payment method.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Billing summary metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      invoicedTotal:
+                        type: string
+                        example: "125000.00"
+                      collectedTotal:
+                        type: string
+                        example: "98000.00"
+                      outstandingBalance:
+                        type: string
+                        example: "27000.00"
+                      countByStatus:
+                        type: object
+                      collectionsByPaymentMethod:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            method:
+                              type: string
+                              example: UPI
+                            count:
+                              type: integer
+                              example: 35
+                            amount:
+                              type: string
+                              example: "45000.00"
+        '403':
+          description: Forbidden (CLINICIAN denied)
+
+  /audit-logs:
+    get:
+      tags:
+        - Audit Logs
+      summary: Query system audit logs (ADMIN only, read-only)
+      description: Allowed roles - ADMIN only. Read-only viewer for tracking mutations across entities, users, timestamps, and network origins.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: entity
+          in: query
+          description: Target model entity (e.g. Appointment, Invoice, Patient, Visit)
+          schema:
+            type: string
+        - name: entityId
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          description: Mutation action (e.g. CREATE, UPDATE, DELETE, STATUS_CHANGE, READ, PAYMENT_SUCCEEDED)
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated audit logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        userId:
+                          type: string
+                          format: uuid
+                        userRole:
+                          type: string
+                          example: ADMIN
+                        action:
+                          type: string
+                          example: STATUS_CHANGE
+                        entity:
+                          type: string
+                          example: Invoice
+                        entityId:
+                          type: string
+                        changes:
+                          type: object
+                        createdAt:
+                          type: string
+                          format: date-time
+                  meta:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      totalPages:
+                        type: integer
+        '403':
+          description: Forbidden (Only ADMIN permitted)
 
 
 components:
@@ -1513,3 +1806,34 @@ components:
         database:
           type: string
           example: connected
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: Validation failed
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  message:
+                    type: string
