@@ -1,503 +1,374 @@
-<div align="center">
+# 🏥 Hospital Management System (HMS) - REST API
 
-# 🏥 Hospital Management System (HMS)
-### *Enterprise-Grade, Secure & Modular Clinical Administration REST API*
+An enterprise-grade, secure, and modular clinical administration backend built with **Node.js**, **Express**, **Prisma ORM**, and **PostgreSQL 16**. Featuring strict **Role-Based Access Control (RBAC)**, transaction-safe appointment scheduling, electronic medical records (EMR), automated billing with Decimal precision, comprehensive audit trails, and self-documenting OpenAPI 3.0 explorer.
 
-[![Node.js Version](https://img.shields.io/badge/Node.js-%3E%3D20.0.0-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![Express.js](https://img.shields.io/badge/Express.js-4.21-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
-[![Prisma ORM](https://img.shields.io/badge/Prisma-6.1.0-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://www.prisma.io/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16--Alpine-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+---
 
-<br/>
+## 📑 Table of Contents
 
-**A robust, scalable backend engineered for hospitals, medical clinics, and healthcare networks.**  
-Featuring strict Role-Based Access Control (RBAC), end-to-end audit compliance, transaction-safe clinical workflows, and high-performance relational data modeling.
-
-[Architecture](#-system-architecture) •
-[Features & Status](#-module-status--feature-roadmap) •
-[Getting Started](#-getting-started) •
-[API Reference](#-api-endpoints-overview) •
-[Data Model](#-database--domain-model) •
-[Security](#-security--compliance)
-
-</div>
+- [Executive Overview](#-executive-overview)
+- [System Architecture](#-system-architecture)
+  - [Layered Request Pipeline](#layered-request-pipeline)
+  - [Codebase Directory Structure](#codebase-directory-structure)
+- [Prerequisites](#-prerequisites)
+- [Environment Variables](#-environment-variables)
+- [Step-by-Step Setup](#-step-by-step-setup)
+- [Demo Credentials](#-demo-credentials)
+- [Testing Suite](#-testing-suite)
+- [API Documentation](#-api-documentation)
+- [RBAC Permission Matrix](#-rbac-permission-matrix)
+- [Key Design Decisions](#-key-design-decisions)
+- [Known Limitations](#-known-limitations)
+- [Assessment Acceptance Verification](#-assessment-acceptance-verification)
 
 ---
 
 ## 🌟 Executive Overview
 
-The **Hospital Management System (HMS)** backend is built from the ground up to solve complex healthcare domain challenges: multi-role access hierarchies, non-overlapping clinician scheduling, electronic medical records (EMR), idempotent appointment booking, and audit trails for regulatory compliance.
-
-### Highlights & Engineering Pillars
-- **Clean Layered Architecture**: Strict separation of concerns following `Routes` ➔ `Middleware` ➔ `Controller` ➔ `Service` ➔ `Repository` ➔ `Database`.
-- **Zero Floating-Point Financials**: All billing, fees, and payments are stored and calculated in integer subunits (paise / cents) to eliminate rounding discrepancies.
-- **Auditing & Traceability**: Immutable audit log captures every critical action with state diffs (`changed_fields`), IP, user agent, and unique distributed request tracking (`X-Request-Id`).
-- **Resilient Security**: Tiered JWT authentication (short-lived access tokens with rotating, revocable refresh tokens in database), password hashing with bcrypt, strict CORS, rate limiters, and Helmet headers.
-- **OpenAPI / Swagger Ready**: Self-documenting API explorer available at `/api-docs`.
+The Hospital Management System REST API is engineered to solve complex operational challenges in healthcare clinics and hospitals:
+- **Zero Race Conditions**: PostgreSQL partial unique constraints and atomic row-level locks prevent double-booking and payment settlement races under high concurrency.
+- **Strict Role-Based Security**: Three defined staff tiers (`ADMIN`, `FRONT_DESK`, `CLINICIAN`) with clinical narrative protection and read/write perimeter checks.
+- **Audit Compliance**: Immutable audit logging tracks every sensitive entity creation, status transition, monetary adjustment, and demographic access with user, IP, and timestamp provenance.
+- **Decimal Precision Billing**: Exact Decimal calculations ensure line item totals, taxes, discounts, and payments reconcile without floating-point rounding errors.
 
 ---
 
 ## 🏗 System Architecture
 
-```
-                  ┌─────────────────────────────────────────┐
-                  │             Client Requests             │
-                  │   (Web Frontend, Mobile, Third-party)   │
-                  └────────────────────┬────────────────────┘
-                                       │ HTTP / HTTPS
-                                       ▼
-                  ┌─────────────────────────────────────────┐
-                  │           Global Middleware             │
-                  │   Helmet • CORS • RateLimit • PinoHttp  │
-                  │              Request ID                 │
-                  └────────────────────┬────────────────────┘
-                                       │
-                                       ▼
-                  ┌─────────────────────────────────────────┐
-                  │          Routing & RBAC Layer           │
-                  │   authenticate.js  •  authorize.js      │
-                  │      Zod Schema Validation Engine       │
-                  └────────────────────┬────────────────────┘
-                                       │
-                    ┌──────────────────┴──────────────────┐
-                    ▼                                     ▼
-         ┌──────────────────────┐              ┌──────────────────────┐
-         │     Controllers      │              │    Audit Observer    │
-         │ (HTTP parsing / DTO) │              │  (Compliance Trail)  │
-         └──────────┬───────────┘              └──────────────────────┘
-                    │
-                    ▼
-         ┌──────────────────────┐
-         │    Service Layer     │
-         │  (Domain & Rules)    │
-         └──────────┬───────────┘
-                    │
-                    ▼
-         ┌──────────────────────┐
-         │  Repository Layer    │
-         │   (Prisma ORM)       │
-         └──────────┬───────────┘
-                    │
-                    ▼
-         ┌──────────────────────────────────────────────────┐
-         │            PostgreSQL 16 Database                │
-         │  Relational constraints, Indexes & UUID Keys     │
-         └──────────────────────────────────────────────────┘
-```
+### Layered Request Pipeline
 
----
-
-## 📊 Module Status & Feature Roadmap
-
-| Module | Core Responsibility | Status | Implemented Components |
-| :--- | :--- | :---: | :--- |
-| **Authentication** | JWT issue, refresh token rotation, revocation & secure logout | ✅ **Ready** | Controller, Service, Repo, Schema, RateLimiters |
-| **User Management** | Administrative staff onboarding, credentials, status & role assignment | ✅ **Ready** | Full CRUD, Role assignment, Password reset |
-| **Departments** | Medical department classification & doctor assignments | ✅ **Ready** | Full CRUD, Soft-deactivate, Unique naming |
-| **Doctor Profiles** | Specialization, medical license verification, consultation fees | ✅ **Ready** | CRUD, Subunit fee handling, User association |
-| **Doctor Schedules**| Weekly recurring shift templates, slot duration configurations | 🚧 **In Progress** | Schema & Repository complete; Routes/Service wiring |
-| **Patient Records** | Medical Record Number (MRN) generation, patient demographics & vitals | ✅ **Ready** | Full CRUD, Soft deletion, Phone/Email search |
-| **Audit Logs** | Immutable system-wide activity log with before/after state diffs | ✅ **Ready** | Querying, Filters by action, entity, user & dates |
-| **Appointments** | Booking engine, slot locking, double-booking prevention, status lifecycle | 🚧 **Next Up** | Schema & Migration ready; Service logic underway |
-| **Visits (EMR)** | Clinical encounters, vitals signs (BP, pulse, SpO2, temp), diagnosis notes | 📋 **Planned** | Prisma Schema modeled |
-| **Prescriptions** | Prescribed medications, dosage instructions, duration & administration route | 📋 **Planned** | Prisma Schema modeled |
-| **Diagnostics** | Lab and imaging order management, findings and impressions | 📋 **Planned** | Prisma Schema modeled |
-| **Billing & Payments**| Invoicing, multi-mode payments (Cash, Card, UPI, Insurance), refunds | 📋 **Planned** | Prisma Schema modeled |
-| **Reports** | Operational metrics, revenue analytics, clinical volume reports | 📋 **Planned** | Routing & skeleton configured |
-
----
-
-## 🗂 Project Structure
+The architecture follows a strict, unidirectional pattern:
+**`Routes` $\to$ `Middleware` $\to$ `Controller` $\to$ `Service` $\to$ `Repository` $\to$ `PostgreSQL Database`**
 
 ```
+                     ┌─────────────────────────────────────────┐
+                     │            Client HTTP Client           │
+                     └────────────────────┬────────────────────┘
+                                          │
+                                          ▼
+                     ┌─────────────────────────────────────────┐
+                     │           Global Middleware             │
+                     │  Helmet • CORS • RateLimit • PinoHttp   │
+                     │    RequestID • AsyncLocalStorage Ctx    │
+                     └────────────────────┬────────────────────┘
+                                          │
+                                          ▼
+                     ┌─────────────────────────────────────────┐
+                     │        Security & Routing Layer         │
+                     │  authenticate.js   •   authorize.js     │
+                     │       Zod DTO Schema Validation         │
+                     │     idempotency.js Middleware           │
+                     └────────────────────┬────────────────────┘
+                                          │
+                                          ▼
+                     ┌─────────────────────────────────────────┐
+                     │           Controller Layer              │
+                     │ HTTP Request/Response Parsing & Status  │
+                     └────────────────────┬────────────────────┘
+                                          │
+                                          ▼
+                     ┌─────────────────────────────────────────┐
+                     │             Service Layer               │
+                     │  Business Logic • Decimal Calculations  │
+                     │  State Machine • Invariant Enforcement  │
+                     └────────────────────┬────────────────────┘
+                                          │
+                                          ▼
+                     ┌─────────────────────────────────────────┐
+                     │           Repository Layer              │
+                     │  Prisma Queries • Raw SQL Aggregations  │
+                     │  Row Locks (SELECT FOR UPDATE) • Seqs   │
+                     └────────────────────┬────────────────────┘
+                                          │
+                                          ▼
+                     ┌─────────────────────────────────────────┐
+                     │          PostgreSQL 16 Engine           │
+                     │  Partial Indexes • Foreign Keys • Enums │
+                     └─────────────────────────────────────────┘
+```
+
+### Codebase Directory Structure
+
+```text
 HMS/
+├── docs/
+│   ├── openapi.yaml                 # OpenAPI 3.0 complete API specification
+│   └── ERD.md                       # Mermaid ERD with cardinalities & index analysis
 ├── backend/
+│   ├── docker-compose.yml           # PostgreSQL container orchestration
+│   ├── package.json                 # Dependencies and test runner scripts
+│   ├── jest.config.js               # Jest ESM test runner configuration
+│   ├── .env.example                 # Environment configuration template
 │   ├── docs/
-│   │   └── openapi.yaml               # OpenAPI 3.0 specification file
+│   │   ├── openapi.yaml             # API specification (served at /api-docs)
+│   │   └── ERD.md                   # Database schema documentation
 │   ├── prisma/
-│   │   ├── schema.prisma              # Comprehensive multi-model database schema
-│   │   └── seed.js                    # Database seed scripts (mock data & default admin)
+│   │   ├── schema.prisma            # Declarative Prisma schema (16 models, 8 enums)
+│   │   ├── migrations/              # Database migration history
+│   │   └── seed.js                  # Synthetic data seeder (users, doctors, patients, appts)
 │   ├── src/
+│   │   ├── app.js                   # Express application setup and route mounting
+│   │   ├── server.js                # Server entrypoint with graceful shutdown handlers
+│   │   ├── config/
+│   │   │   ├── env.js               # Validated environment configuration
+│   │   │   ├── logger.js            # Structured Pino logger
+│   │   │   └── swagger.js           # Swagger UI explorer configuration
 │   │   ├── common/
-│   │   │   ├── constants/             # Permissions matrix, Roles, Enum statuses
-│   │   │   │   ├── permissions.js
-│   │   │   │   ├── roles.js
-│   │   │   │   └── statuses.js
-│   │   │   ├── errors/                # Standardized AppError hierarchy
-│   │   │   │   ├── AppError.js
-│   │   │   │   └── index.js
-│   │   │   ├── middleware/            # Auth, RBAC, Validation, Errors & Rate limiters
-│   │   │   │   ├── authenticate.js
-│   │   │   │   ├── authorize.js
-│   │   │   │   ├── errorHandler.js
-│   │   │   │   ├── idempotency.js
-│   │   │   │   ├── notFound.js
-│   │   │   │   ├── rateLimiters.js
-│   │   │   │   ├── requestId.js
-│   │   │   │   └── validate.js
-│   │   │   └── utils/                 # Pagination, Date math, Currency subunit helpers
-│   │   │       ├── asyncHandler.js
-│   │   │       ├── dates.js
-│   │   │       ├── money.js
-│   │   │       ├── pagination.js
-│   │   │       └── response.js
-│   │   ├── config/                    # Environment validation, Pino logger, Swagger setup
-│   │   │   ├── env.js
-│   │   │   ├── logger.js
-│   │   │   └── swagger.js
-│   │   ├── infra/                     # Prisma database client singleton
-│   │   │   └── prisma.js
-│   │   ├── modules/                   # Domain-driven feature modules
-│   │   │   ├── appointments/
-│   │   │   ├── audit/
-│   │   │   ├── auth/
-│   │   │   ├── billing/
-│   │   │   ├── departments/
-│   │   │   ├── diagnostic-reports/
-│   │   │   ├── doctors/
-│   │   │   ├── patients/
-│   │   │   ├── prescriptions/
-│   │   │   ├── reports/
-│   │   │   ├── schedules/
-│   │   │   ├── users/
-│   │   │   └── visits/
-│   │   ├── app.js                     # Express application configuration
-│   │   └── server.js                  # Server entry point with graceful shutdown
-│   ├── tests/                         # Unit & Integration test suites
-│   │   ├── helpers/
-│   │   ├── integration/
-│   │   └── unit/
-│   ├── .env.example                   # Environment configuration template
-│   ├── docker-compose.yml             # Dual PostgreSQL containers (dev + test)
-│   └── package.json                   # Dependencies, engines and script definitions
-├── .gitignore
-└── README.md                          # Project documentation
+│   │   │   ├── constants/           # Roles, statuses, transition maps, permissions
+│   │   │   ├── context/             # AsyncLocalStorage request context
+│   │   │   ├── errors/              # Domain AppError hierarchy
+│   │   │   ├── middleware/          # authenticate, authorize, validate, rateLimit, error
+│   │   │   └── utils/               # dates, money, pagination, response helpers
+│   │   ├── infra/
+│   │   │   └── prisma.js            # Prisma client singleton
+│   │   └── modules/
+│   │       ├── auth/                # Login, refresh token rotation, revocation
+│   │       ├── users/               # Administrative staff accounts & password resets
+│   │       ├── departments/         # Clinical departments with deactivation protection
+│   │       ├── doctors/             # Doctor profiles, fees, specialization
+│   │       ├── schedules/           # Weekly recurring templates & slot alignment
+│   │       ├── patients/            # Patient demographics & concurrency-safe MRN
+│   │       ├── appointments/        # Slot generation, atomic booking, transitions
+│   │       ├── visits/              # EMR encounters, notes, clinical closure
+│   │       ├── prescriptions/       # Medical prescriptions with dosage validation
+│   │       ├── diagnostic-reports/  # Diagnostic metadata & status management
+│   │       ├── billing/             # Invoicing, Decimal totals, sandbox payment gateway
+│   │       ├── reports/             # SQL analytics, dashboard KPIs, billing summaries
+│   │       └── audit/               # Immutable compliance change tracker
+│   └── tests/
+│       ├── helpers/                 # authHelper, fixtures, dbReset, globalSetup
+│       ├── unit/                    # 81 unit tests across all domain services
+│       └── integration/             # Supertest suites covering A1-A5 & negative cases
+└── README.md
 ```
 
 ---
 
-## 🔒 Security & Compliance
+## 💻 Prerequisites
 
-### Role-Based Access Control (RBAC) Matrix
-
-Users belong to one of three roles, each granting calibrated system permissions:
-
-| Permission Namespace | ADMIN | FRONT_DESK | CLINICIAN |
-| :--- | :---: | :---: | :---: |
-| **User Administration** (`users:*`) | Full Access | ❌ | ❌ |
-| **Department Management** (`departments:*`) | Full Access | Read Only | Read Only |
-| **Doctor Profiles** (`doctors:*`) | Full Access | Read Only | Read Only |
-| **Schedules & Rostering** (`schedules:*`) | Full Access | Read Only | Read Only |
-| **Patient Demographics** (`patients:*`) | Full Access | Full Access | Read Only (Scoped) |
-| **Appointment Booking** (`appointments:*`) | Full Access | Full Access | Read Only |
-| **Clinical Encounters** (`visits:*`) | ❌ | Read (Redacted) | Full Access |
-| **Prescriptions & Rx** (`prescriptions:*`) | Read Only | ❌ | Full Access |
-| **Diagnostic Tests** (`diagnostic-reports:*`)| Read Only | ❌ | Full Access |
-| **Billing & Invoices** (`invoices:*`) | Full Access | Full Access | ❌ |
-| **System Audit Logs** (`audit:read`) | Full Access | ❌ | ❌ |
-
-### Standardized API Envelopes
-
-#### ✅ Success Response
-```json
-{
-  "success": true,
-  "data": {
-    "id": "7f09ef54-8e42-4f32-841f-cb7073b3e61f",
-    "mrn": "MRN-2026-00042",
-    "firstName": "John",
-    "lastName": "Doe",
-    "phone": "+919876543210"
-  },
-  "meta": {
-    "page": 1,
-    "limit": 20,
-    "total": 1,
-    "totalPages": 1
-  }
-}
-```
-
-#### ❌ Error Response
-```json
-{
-  "success": false,
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Input validation failed",
-    "details": [
-      {
-        "field": "phone",
-        "message": "Invalid phone number format"
-      }
-    ],
-    "requestId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
-  }
-}
-```
+- **Node.js**: `v20.0.0` or higher (`v24.x` supported)
+- **Docker Desktop**: Docker Engine & Docker Compose
+- **PostgreSQL**: `16-alpine` (managed automatically via Docker)
+- **Package Manager**: `npm` (v10+) or `pnpm`
 
 ---
 
-## ⚡ Getting Started
+## ⚙️ Environment Variables
 
-### Prerequisites
-- **Node.js** >= `20.0.0`
-- **npm** >= `10.0.0`
-- **Docker** and **Docker Compose** installed and running
+Copy `backend/.env.example` to `backend/.env`. All default values are configured for local development:
+
+| Variable | Type | Default | Description |
+| :--- | :---: | :--- | :--- |
+| `NODE_ENV` | `string` | `development` | Runtime environment (`development`, `test`, `production`) |
+| `PORT` | `number` | `3000` | HTTP application port |
+| `DATABASE_URL` | `string` | `postgresql://hms_user:hms_password@localhost:5432/hms_dev?schema=public` | Primary PostgreSQL connection string |
+| `TEST_DATABASE_URL`| `string` | `postgresql://hms_user:hms_password@localhost:5432/hms_test?schema=public` | Isolated test database connection string |
+| `JWT_ACCESS_SECRET`| `string` | *(32+ char secret)* | Cryptographic HMAC secret for short-lived access tokens |
+| `JWT_REFRESH_SECRET`| `string`| *(32+ char secret)* | Cryptographic secret for rotating refresh tokens |
+| `JWT_ACCESS_TTL` | `string` | `15m` | Access token lifespan (e.g. `15m`, `1h`) |
+| `JWT_REFRESH_TTL`| `string` | `7d` | Refresh token lifespan (e.g. `7d`, `30d`) |
+| `CLINIC_TZ` | `string` | `Asia/Kolkata` | Standard operational clinic timezone (e.g. `Asia/Kolkata`) |
+| `BCRYPT_ROUNDS` | `number` | `12` | Salt rounds for password hashing |
+| `CORS_ORIGINS` | `string` | `http://localhost:5173,http://localhost:3000` | Whitelisted frontend web origins |
+| `LOG_LEVEL` | `string` | `debug` | Structured logger threshold (`fatal`, `error`, `warn`, `info`, `debug`) |
 
 ---
 
-### Step 1: Clone & Navigate
+## 🚀 Step-by-Step Setup
+
+### Step 1: Start PostgreSQL via Docker
+
+From the `backend/` directory:
 
 ```bash
-git clone https://github.com/your-username/Hospital-Management-System.git
-cd Hospital-Management-System/backend
-```
-
----
-
-### Step 2: Configure Environment Variables
-
-Copy the template to `.env`:
-
-```bash
-cp .env.example .env
-```
-
-Review and adjust variables as needed:
-
-| Variable | Default Value | Description |
-| :--- | :--- | :--- |
-| `NODE_ENV` | `development` | Runtime environment (`development`, `production`, `test`) |
-| `PORT` | `3000` | Port on which the HTTP server listens |
-| `DATABASE_URL` | `postgresql://hms_user:hms_password@localhost:5432/hms_db?schema=public` | PostgreSQL connection string for development |
-| `DATABASE_URL_TEST` | `postgresql://hms_test_user:hms_test_password@localhost:5433/hms_test_db?schema=public` | Isolated test database instance |
-| `JWT_ACCESS_SECRET` | *32+ character random secret* | HMAC secret used to sign 15-minute access tokens |
-| `JWT_REFRESH_SECRET` | *32+ character random secret* | HMAC secret used to sign 7-day refresh tokens |
-| `JWT_ACCESS_EXPIRES_IN` | `15m` | Lifetime of access token |
-| `JWT_REFRESH_EXPIRES_IN` | `7d` | Lifetime of refresh token |
-| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3001` | Comma-separated list of permitted origin URLs |
-| `CLINIC_TZ` | `Asia/Kolkata` | Canonical timezone for schedule slot calculations |
-| `LOG_LEVEL` | `debug` | Logging threshold (`fatal`, `error`, `warn`, `info`, `debug`, `trace`) |
-
----
-
-### Step 3: Start PostgreSQL with Docker Compose
-
-HMS provides separate, pre-configured containers for development and automated testing:
-
-```bash
-# Start both development (5432) and test (5433) PostgreSQL instances
+cd backend
 docker compose up -d
-
-# Verify health status
-docker compose ps
 ```
 
----
-
-### Step 4: Install Dependencies & Run Migrations
+Verify that the `hms-postgres` container is healthy and listening on port `5432`:
 
 ```bash
-# Install node packages
+docker ps --filter "name=hms-postgres"
+```
+
+### Step 2: Install Dependencies
+
+```bash
 npm install
-
-# Run database migrations
-npm run db:migrate
-
-# Generate the latest Prisma client
-npm run db:generate
-
-# (Optional) Seed initial users and reference data
-npm run db:seed
 ```
 
----
+### Step 3: Run Database Migrations
 
-### Step 5: Start the Development Server
+Apply the migration history to initialize tables, partial unique indexes, and sequences:
 
 ```bash
+npx prisma migrate dev
+```
+
+### Step 4: Seed Synthetic Clinic Data
+
+Seeds administrative staff, departments, doctors, weekly schedules, 25 synthetic patients, appointments, visits, prescriptions, and invoices:
+
+```bash
+node prisma/seed.js
+```
+
+### Step 5: Start the Application
+
+```bash
+# Development mode with hot-reload:
 npm run dev
+
+# Production mode:
+npm start
 ```
 
-The server will initialize on `http://localhost:3000`.
-
-- **Health Check**: `GET http://localhost:3000/health` ➔ `{"status": "ok"}`
-- **Interactive API Docs**: `GET http://localhost:3000/api-docs`
-- **Prisma Visual Studio**: `npm run db:studio` (opens GUI at `http://localhost:5555`)
+The API will start at **`http://localhost:3000`**.  
+Swagger documentation is available at **`http://localhost:3000/api-docs`**.
 
 ---
 
-## 📡 API Endpoints Overview
+## 🔐 Demo Credentials
 
-All routes are version-prefixed under `/api/v1`.
+All seed accounts are pre-configured with secure credentials:
 
-### 🔑 Authentication (`/api/v1/auth`)
-| Method | Endpoint | Access | Description |
-| :---: | :--- | :---: | :--- |
-| `POST` | `/api/v1/auth/login` | Public | Authenticates credentials and issues token pair (Rate-limited) |
-| `POST` | `/api/v1/auth/refresh` | Public | Exchanges a valid refresh token for a fresh access token |
-| `POST` | `/api/v1/auth/logout` | Authenticated | Revokes current session and invalidates active refresh token |
-
-### 👥 User Administration (`/api/v1/users`)
-| Method | Endpoint | Access / Permission | Description |
-| :---: | :--- | :---: | :--- |
-| `POST` | `/api/v1/users` | `ADMIN` (`users:create`) | Creates new staff member |
-| `GET` | `/api/v1/users` | `ADMIN` (`users:read`) | Lists users with search and pagination |
-| `GET` | `/api/v1/users/:id` | `ADMIN` (`users:read`) | Retrieves detailed profile for user |
-| `PATCH` | `/api/v1/users/:id` | `ADMIN` (`users:update`) | Updates profile details or active status |
-
-### 🏢 Departments (`/api/v1/departments`)
-| Method | Endpoint | Access / Permission | Description |
-| :---: | :--- | :---: | :--- |
-| `POST` | `/api/v1/departments` | `ADMIN` (`departments:create`) | Registers a new clinical department |
-| `GET` | `/api/v1/departments` | `All Staff` (`departments:read`) | Lists active and inactive departments |
-| `GET` | `/api/v1/departments/:id` | `All Staff` (`departments:read`) | Department details with affiliated doctors |
-| `PATCH` | `/api/v1/departments/:id` | `ADMIN` (`departments:update`) | Updates department details or status |
-
-### 🩺 Doctor Management (`/api/v1/doctors`)
-| Method | Endpoint | Access / Permission | Description |
-| :---: | :--- | :---: | :--- |
-| `POST` | `/api/v1/doctors` | `ADMIN` (`doctors:create`) | Onboards doctor profile with license and fees |
-| `GET` | `/api/v1/doctors` | `All Staff` (`doctors:read`) | Lists doctors with department filter |
-| `GET` | `/api/v1/doctors/:id` | `All Staff` (`doctors:read`) | Doctor profile, department, and weekly schedule |
-| `PATCH` | `/api/v1/doctors/:id` | `ADMIN` (`doctors:update`) | Updates doctor details, fee, or department |
-| `DELETE`| `/api/v1/doctors/:id` | `ADMIN` (`doctors:delete`) | Soft-deactivates doctor record |
-
-### 🗂 Patient Records (`/api/v1/patients`)
-| Method | Endpoint | Access / Permission | Description |
-| :---: | :--- | :---: | :--- |
-| `POST` | `/api/v1/patients` | `ADMIN`, `FRONT_DESK` | Registers new patient & generates unique MRN |
-| `GET` | `/api/v1/patients` | `ADMIN`, `FRONT_DESK`, `CLINICIAN` | Search patients by MRN, name, phone, or email |
-| `GET` | `/api/v1/patients/:id` | `ADMIN`, `FRONT_DESK`, `CLINICIAN` | Comprehensive patient profile |
-| `PATCH` | `/api/v1/patients/:id` | `ADMIN`, `FRONT_DESK` | Updates patient demographics or emergency contacts |
-| `DELETE`| `/api/v1/patients/:id` | `ADMIN`, `FRONT_DESK` | Soft deletes a patient record |
-
-### 📜 Audit Logs (`/api/v1/audit-logs`)
-| Method | Endpoint | Access / Permission | Description |
-| :---: | :--- | :---: | :--- |
-| `GET` | `/api/v1/audit-logs` | `ADMIN` (`audit:read`) | Retrieves audit entries with filter by user, action, entity, date range |
+| Role | Full Name | Email Address | Password | Department / Responsibility |
+| :--- | :--- | :--- | :--- | :--- |
+| **ADMIN** | System Administrator | `admin@hms.test` | `Admin@12345` | Global hospital administration & audit |
+| **FRONT_DESK** | Priya Sharma | `frontdesk1@hms.test` | `FrontDesk@12345` | Patient registration, scheduling & billing |
+| **FRONT_DESK** | Rahul Verma | `frontdesk2@hms.test` | `FrontDesk@12345` | Desk check-ins, payments & invoicing |
+| **CLINICIAN** | Dr. Rajesh Sharma | `dr.sharma@hms.test` | `Doctor@12345` | Cardiology (Specialist) |
+| **CLINICIAN** | Dr. Anita Patel | `dr.patel@hms.test` | `Doctor@12345` | Pediatrics (Specialist) |
+| **CLINICIAN** | Dr. David Williams | `dr.williams@hms.test` | `Doctor@12345` | Orthopedics (Specialist) |
 
 ---
 
-## 🗄 Database & Domain Model
+## 🧪 Testing Suite
 
-```mermaid
-erDiagram
-    User ||--o| Doctor : "has profile"
-    User ||--o{ RefreshToken : "owns"
-    User ||--o{ AuditLog : "triggers"
-    Department ||--o{ Doctor : "employs"
-    Doctor ||--o{ Schedule : "works on"
-    Doctor ||--o{ Appointment : "attends"
-    Doctor ||--o{ Visit : "conducts"
-    Patient ||--o{ Appointment : "books"
-    Patient ||--o{ Visit : "undergoes"
-    Patient ||--o{ Invoice : "billed to"
-    Appointment ||--o| Visit : "results in"
-    Visit ||--o{ Prescription : "includes"
-    Visit ||--o{ DiagnosticReport : "orders"
-    Invoice ||--o{ InvoiceLineItem : "contains"
-    Invoice ||--o{ Payment : "settled with"
-
-    User {
-        uuid id PK
-        string email UK
-        string passwordHash
-        string firstName
-        string lastName
-        enum role "ADMIN | FRONT_DESK | CLINICIAN"
-        boolean isActive
-    }
-
-    Doctor {
-        uuid id PK
-        uuid userId FK
-        uuid departmentId FK
-        string specialization
-        string licenseNumber UK
-        int consultationFee "in paise"
-    }
-
-    Patient {
-        uuid id PK
-        string mrn UK "Medical Record Number"
-        string firstName
-        string lastName
-        date dateOfBirth
-        string phone
-        string bloodGroup
-    }
-
-    Appointment {
-        uuid id PK
-        uuid patientId FK
-        uuid doctorId FK
-        date appointmentDate
-        string startTime
-        string endTime
-        enum status "SCHEDULED | CONFIRMED | CHECKED_IN | IN_PROGRESS | COMPLETED | CANCELLED | NO_SHOW"
-    }
-
-    Invoice {
-        uuid id PK
-        string invoiceNumber UK
-        uuid patientId FK
-        enum status "DRAFT | ISSUED | PARTIALLY_PAID | PAID | CANCELLED | REFUNDED"
-        int totalAmount "in paise"
-        int paidAmount "in paise"
-    }
-```
-
----
-
-## 🧪 Testing & Quality Assurance
-
-The codebase uses **Jest** with native ES Modules support and **Supertest** for HTTP contract testing.
+The testing suite contains unit tests, integration tests, and acceptance test coverage:
 
 ```bash
-# Run all test suites
-npm test
+# Run unit tests across all 9 domain test suites:
+npm run test:unit --prefix backend
 
-# Run isolated unit tests
-npm run test:unit
+# Run integration tests (requires live PostgreSQL connection):
+npm run test:integration --prefix backend
 
-# Run full HTTP integration tests against isolated postgres-test
-npm run test:integration
-
-# Run linter
-npm run lint
+# Run code coverage analysis:
+npm run test:coverage --prefix backend
 ```
 
 ---
 
-## 🛠 Available NPM Scripts
+## 📖 API Documentation
 
-| Command | Action |
-| :--- | :--- |
-| `npm run dev` | Starts server with native Node watch mode (`--watch`) |
-| `npm run start` | Starts production server |
-| `npm run db:migrate` | Runs Prisma development migrations |
-| `npm run db:migrate:prod`| Deploys migrations to production database |
-| `npm run db:generate` | Regenerates Prisma Client based on schema modifications |
-| `npm run db:studio` | Launches web-based visual data browser |
-| `npm run db:seed` | Seeds database with initial test fixtures |
-| `npm test` | Runs the test suite |
-| `npm run lint` | Runs ESLint validation across `/src` and `/tests` |
+Interactive Swagger UI documentation is served automatically:
+- **Swagger UI URL**: `http://localhost:3000/api-docs`
+- **Raw OpenAPI 3.0 Spec**: `backend/docs/openapi.yaml` (also mirrored at `docs/openapi.yaml`)
+- **Root Redirect**: Accessing `http://localhost:3000/` automatically redirects to `/api-docs`.
 
 ---
 
-## 🤝 Contributing & Guidelines
+## 🛡 RBAC Permission Matrix
 
-1. **Branching Strategy**: Branch off `main` with descriptive feature branches (e.g. `appointments-engine`, `billing-flow`).
-2. **Commit Conventions**: Clear, imperative commit messages describing the change (e.g. `Implement appointment booking`, `Add schedule repository and validation schema`).
-3. **Data Integrity**: Never mutate financial amounts in floats; use the `money.js` helper functions for integer currency calculations.
-4. **Safety & Security**: Always run schema validations using Zod schemas before touching service layers.
+| Endpoint Group | Method | Path | Allowed Roles | Description |
+| :--- | :---: | :--- | :---: | :--- |
+| **Auth** | `POST` | `/api/v1/auth/login` | Public | Authenticates credentials, returns access & refresh tokens |
+| | `POST` | `/api/v1/auth/refresh` | Public | Rotates single-use refresh token |
+| | `POST` | `/api/v1/auth/logout` | Authenticated | Revokes refresh token in database |
+| | `GET` | `/api/v1/auth/me` | Authenticated | Returns current authenticated profile |
+| **Users** | `POST/GET`| `/api/v1/users` | `ADMIN` | Manage staff accounts; passwords omitted; audited |
+| | `PATCH` | `/api/v1/users/:id` | `ADMIN` | Update staff role or status |
+| | `POST` | `/api/v1/users/:id/reset-password` | `ADMIN` | Enforce administrative password reset |
+| **Departments**| `GET` | `/api/v1/departments` | All Roles | View department listing |
+| | `POST/PATCH`| `/api/v1/departments/:id` | `ADMIN` | Create or update departments; 422 if active doctors exist |
+| **Doctors** | `GET` | `/api/v1/doctors` | All Roles | List doctors with specialization and fee |
+| | `POST/PATCH`| `/api/v1/doctors/:id` | `ADMIN` | Link clinician user to doctor profile |
+| **Schedules** | `GET` | `/api/v1/doctors/:id/schedules` | All Roles | View doctor weekly schedules |
+| | `PUT` | `/api/v1/doctors/:id/schedules` | `ADMIN` | Replace weekly schedule atomically |
+| **Patients** | `POST` | `/api/v1/patients` | `ADMIN`, `FRONT_DESK` | Register patient with concurrency-safe MRN (`HMS-XXXXXX`) |
+| | `GET` | `/api/v1/patients` | `ADMIN`, `FRONT_DESK`, `CLINICIAN` | List patients (CLINICIAN scoped to own patients) |
+| | `GET` | `/api/v1/patients/:id` | `ADMIN`, `FRONT_DESK`, `CLINICIAN` | View demographics; audited on every read |
+| | `PATCH` | `/api/v1/patients/:id` | `ADMIN`, `FRONT_DESK` | Update demographics |
+| | `DELETE`| `/api/v1/patients/:id` | `ADMIN` | Soft-deactivate patient (`isActive: false`) |
+| **Slots** | `GET` | `/api/v1/doctors/:id/slots` | All Roles | Dynamic 14-day slot generator in clinic timezone |
+| **Appointments**| `POST`| `/api/v1/appointments` | `ADMIN`, `FRONT_DESK` | Idempotent slot booking; 409 on slot collision |
+| | `GET` | `/api/v1/appointments` | All Roles | Paginated list (CLINICIAN scoped to own doctor) |
+| | `PATCH` | `/api/v1/appointments/:id/reschedule` | `ADMIN`, `FRONT_DESK` | Reschedule (max 3 times; atomic slot swap) |
+| | `POST` | `/api/v1/appointments/:id/cancel` | `ADMIN`, `FRONT_DESK` | Cancel appointment; slot immediately freed |
+| | `POST` | `/api/v1/appointments/:id/check-in`| `FRONT_DESK` | Mark checked in on appointment date |
+| | `POST` | `/api/v1/appointments/:id/no-show` | `FRONT_DESK` | Mark no-show after start time has elapsed |
+| **Visits** | `POST` | `/api/v1/visits` | `CLINICIAN` (Owner) | Create OPEN visit from CHECKED_IN appointment |
+| | `GET` | `/api/v1/visits/:id` | All Roles | CLINICIAN own only; FRONT_DESK stripped of clinical notes |
+| | `PATCH` | `/api/v1/visits/:id` | `CLINICIAN` (Owner) | Update chief complaint / clinical notes while OPEN |
+| | `POST` | `/api/v1/visits/:id/close` | `CLINICIAN` (Owner) | Atomic OPEN $\to$ CLOSED & Appointment $\to$ COMPLETED |
+| **Prescriptions**| `POST/GET`| `/api/v1/visits/:id/prescriptions`| `CLINICIAN` (Owner) | Add/list prescriptions (duration: 1-365 days) |
+| **Reports** | `POST/PATCH`| `/api/v1/diagnostic-reports`| `CLINICIAN` (Owner) | Order/complete diagnostic metadata |
+| **Billing** | `POST` | `/api/v1/invoices` | `ADMIN`, `FRONT_DESK` | Create DRAFT invoice with Decimal totals; CLINICIAN denied (403) |
+| | `POST/DELETE`| `/api/v1/invoices/:id/items` | `ADMIN`, `FRONT_DESK` | Add or delete line items on DRAFT invoice |
+| | `POST` | `/api/v1/invoices/:id/issue` | `ADMIN`, `FRONT_DESK` | Lock invoice amounts (DRAFT $\to$ ISSUED) |
+| | `POST` | `/api/v1/invoices/:id/payments` | `ADMIN`, `FRONT_DESK` | Row-locked payment simulation; idempotency cache |
+| | `POST` | `/api/v1/invoices/:id/void` | `ADMIN` only | Void invoice with 0 succeeded payments |
+| **Analytics** | `GET` | `/api/v1/reports/dashboard` | `ADMIN`, `FRONT_DESK` | Operational KPIs & month-to-date metrics |
+| | `GET` | `/api/v1/reports/appointments-summary` | `ADMIN` | SQL aggregation by day, doctor, department, or status |
+| | `GET` | `/api/v1/reports/billing-summary` | `ADMIN`, `FRONT_DESK` | Invoiced, collected, and outstanding totals |
+| **Audit** | `GET` | `/api/v1/audit-logs` | `ADMIN` only | Read-only compliance viewer; no update or delete |
 
 ---
 
-<div align="center">
-  <sub>Built with ❤️ for modern healthcare organizations.</sub>
-</div>
+## 💡 Key Design Decisions
+
+1. **Partial Unique Index on Appointment Slots**:
+   - Instead of relying on vulnerable application-level pre-checks that suffer from race conditions, double-booking is prevented at the database kernel level using a partial index:
+     ```sql
+     CREATE UNIQUE INDEX "appointment_doctor_slot_active_uq"
+     ON "Appointment" ("doctorId", "startTime")
+     WHERE status IN ('SCHEDULED', 'CHECKED_IN');
+     ```
+   - When an appointment is `CANCELLED` or `NO_SHOW`, the index ignores it, immediately freeing the slot without table cleanup.
+2. **Single-Transaction Isolation (`prisma.$transaction`)**:
+   - Appointment booking atomically creates the appointment, inserts the initial `AppointmentHistory` row, and records the `AuditLog` inside a single ACID transaction.
+   - Closing a clinical visit moves `Visit.status = CLOSED` and `Appointment.status = COMPLETED` simultaneously.
+3. **Pessimistic Row-Level Locking on Payments**:
+   - During payment settlement, concurrent requests for the same invoice are serialized using raw SQL row locking:
+     ```sql
+     SELECT id, "totalAmount", "amountPaid", status
+     FROM "Invoice"
+     WHERE id = $1::uuid FOR UPDATE;
+     ```
+   - This prevents two parallel payment submissions from overpaying the outstanding balance.
+4. **Idempotency Key Middleware**:
+   - All critical mutations (`POST /appointments`, `POST /invoices/:id/payments`) support the `Idempotency-Key` header.
+   - Responses are persisted in the `IdempotencyKey` table and replayed with the `X-Idempotent-Replay: true` header when duplicate requests arrive.
+5. **Safe Sequence Generation for Identifiers**:
+   - Medical Record Numbers (`HMS-XXXXXX`) and Invoice Numbers (`INV-YYYY-XXXXXX`) are generated using dedicated PostgreSQL sequences (`patient_mrn_seq`, `invoice_num_seq`) via `nextval()`, preventing sequence collisions under heavy concurrent registration.
+6. **Immutable Audit Trail with Redaction**:
+   - Auditing records attribute-level deltas while redacting sensitive fields (`passwordHash`, `clinicalNotes`, `refreshToken`). Audit records have no `UPDATE` or `DELETE` endpoints.
+
+---
+
+## ⚠️ Known Limitations
+
+1. **In-Memory Rate Limiting**:
+   - The rate limiters currently utilize an in-memory store. In a multi-instance distributed cluster, backing the rate limiters with Redis (`rate-limit-redis`) is recommended.
+2. **File Attachments in Diagnostic Reports**:
+   - As per assessment specifications, `DiagnosticReport.fileReference` stores document metadata only. Real-world deployments should integrate S3/GCS presigned upload URLs with virus scanning.
+3. **No External Payment Gateway SDK**:
+   - Payments run against an integrated sandbox gateway simulator (`simulateOutcome: 'success' | 'fail'`) rather than an external provider (Razorpay/Stripe).
+4. **Sequence Rollover**:
+   - Sequence generation resets at database creation. For multi-facility healthcare systems, prefixing sequences with facility branch codes is advised.
+
+---
+
+## 📋 Assessment Acceptance Verification
+
+| Criteria | Assessment Requirement | Implementation File | Verification Test File |
+| :---: | :--- | :--- | :--- |
+| **A1** | Patient booked into an available slot | `src/modules/appointments/appointments.service.js` | `tests/integration/acceptance.test.js` |
+| **A2** | Conflicting booking prevented (10 concurrent attempts) | `prisma/migrations/20261106000000_init/migration.sql` | `tests/integration/appointments.concurrency.test.js` |
+| **A3** | Strict RBAC allowed vs forbidden across roles | `src/common/middleware/authorize.js` | `tests/unit/rbac.test.js` & `tests/integration/acceptance.test.js` |
+| **A4** | Invoice reconciles with items, tax, discount & payments | `src/modules/billing/billing.service.js` | `tests/unit/billing.test.js` |
+| **A5** | Sensitive read/edit produces audit rows | `src/modules/audit/audit.service.js` | `tests/unit/audit.test.js` & `tests/integration/acceptance.test.js` |
+| **Neg**| Standard error shape (400, 401, 403, 404, 409, 422, 429) | `src/common/middleware/errorHandler.js` | `tests/unit/infra.test.js` |
+| **Docs**| OpenAPI 3.0 specification & Swagger UI explorer | `docs/openapi.yaml` & `src/config/swagger.js` | Served at `GET /api-docs` |
+| **ERD** | Mermaid entity relationship diagram with cardinalities | `docs/ERD.md` | Verified Mermaid syntax |
