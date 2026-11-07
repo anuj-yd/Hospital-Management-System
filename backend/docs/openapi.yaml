@@ -887,6 +887,331 @@ paths:
         '204':
           description: Patient soft-deleted successfully
 
+  /patients/{patientId}/visits:
+    get:
+      tags:
+        - Clinical Visits
+      summary: List visits for a patient (paginated; CLINICIAN scoped)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Paginated visits list
+
+  /visits:
+    post:
+      tags:
+        - Clinical Visits
+      summary: Initiate an OPEN clinical visit for a CHECKED_IN appointment (owning CLINICIAN, ADMIN)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - appointmentId
+              properties:
+                appointmentId:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Visit created with OPEN status
+        '403':
+          description: Forbidden (not owning clinician)
+        '409':
+          description: Visit already initiated for this appointment
+        '422':
+          description: Appointment not in CHECKED_IN status
+
+  /visits/{id}:
+    get:
+      tags:
+        - Clinical Visits
+      summary: Get visit by ID (CLINICIAN own only; FRONT_DESK metadata only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Visit record (clinical notes stripped for FRONT_DESK)
+        '403':
+          description: Forbidden (not owning clinician)
+
+    patch:
+      tags:
+        - Clinical Visits
+      summary: Update clinical notes (chiefComplaint, clinicalNotes; only while OPEN, owning CLINICIAN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                chiefComplaint:
+                  type: string
+                clinicalNotes:
+                  type: string
+      responses:
+        '200':
+          description: Notes updated
+        '409':
+          description: Cannot modify closed visit
+
+  /visits/{id}/close:
+    post:
+      tags:
+        - Clinical Visits
+      summary: Close visit (OPEN -> CLOSED, appointment moves to COMPLETED atomically)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Visit closed, appointment COMPLETED
+        '409':
+          description: Visit already closed
+
+  /visits/{id}/prescriptions:
+    get:
+      tags:
+        - Prescriptions
+      summary: List prescriptions for visit (CLINICIAN own, ADMIN; FRONT_DESK blocked)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Prescriptions list
+        '403':
+          description: Forbidden
+
+    post:
+      tags:
+        - Prescriptions
+      summary: Add prescription to visit (only while OPEN, owning CLINICIAN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - medication
+                - dosage
+                - frequency
+                - durationDays
+              properties:
+                medication:
+                  type: string
+                  example: "Amoxicillin"
+                dosage:
+                  type: string
+                  example: "500mg"
+                frequency:
+                  type: string
+                  example: "Three times daily"
+                durationDays:
+                  type: integer
+                  minimum: 1
+                  maximum: 365
+                  example: 7
+                instructions:
+                  type: string
+                  example: "Take after meals"
+      responses:
+        '201':
+          description: Prescription added
+        '409':
+          description: Visit is closed
+
+  /prescriptions/{id}:
+    patch:
+      tags:
+        - Prescriptions
+      summary: Modify prescription (only while visit OPEN, owning CLINICIAN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                medication:
+                  type: string
+                dosage:
+                  type: string
+                frequency:
+                  type: string
+                durationDays:
+                  type: integer
+                instructions:
+                  type: string
+      responses:
+        '200':
+          description: Prescription updated
+
+    delete:
+      tags:
+        - Prescriptions
+      summary: Remove prescription (only while visit OPEN, owning CLINICIAN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Prescription deleted
+
+  /visits/{id}/diagnostic-reports:
+    get:
+      tags:
+        - Diagnostic Reports
+      summary: List diagnostic reports for visit (CLINICIAN own, ADMIN; FRONT_DESK blocked)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Diagnostic reports list
+
+    post:
+      tags:
+        - Diagnostic Reports
+      summary: Order diagnostic report (metadata only, no file upload; only while visit OPEN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reportType
+              properties:
+                reportType:
+                  type: string
+                  example: "12-Lead ECG"
+                resultSummary:
+                  type: string
+                fileReference:
+                  type: string
+                  example: "RAD-ECG-2026-001"
+      responses:
+        '201':
+          description: Report ordered (status ORDERED)
+
+  /diagnostic-reports/{id}:
+    patch:
+      tags:
+        - Diagnostic Reports
+      summary: Update report status (ORDERED -> COMPLETED with resultSummary text, or ORDERED -> CANCELLED)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [COMPLETED, CANCELLED]
+                resultSummary:
+                  type: string
+                  example: "Normal sinus rhythm, heart rate 72 bpm"
+                fileReference:
+                  type: string
+      responses:
+        '200':
+          description: Report updated
+
+
 components:
   securitySchemes:
     bearerAuth:
