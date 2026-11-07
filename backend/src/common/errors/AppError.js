@@ -78,3 +78,10 @@ export class SlotTakenError extends AppError {
     super('SLOT_TAKEN', message, 409);
   }
 }
+
+export class PatientDoubleBookedError extends AppError {
+  constructor(message = 'Patient already has an active appointment at this time', details = []) {
+    super('PATIENT_DOUBLE_BOOKED', message, 422, details);
+  }
+}
+

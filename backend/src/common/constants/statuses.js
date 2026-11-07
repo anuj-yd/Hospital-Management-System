@@ -4,34 +4,43 @@
  */
 
 export const APPOINTMENT_TRANSITIONS = Object.freeze({
-  SCHEDULED:   ['CONFIRMED', 'CANCELLED', 'NO_SHOW'],
-  CONFIRMED:   ['CHECKED_IN', 'CANCELLED', 'NO_SHOW'],
-  CHECKED_IN:  ['IN_PROGRESS', 'CANCELLED'],
-  IN_PROGRESS: ['COMPLETED'],
+  SCHEDULED:   ['CHECKED_IN', 'CANCELLED', 'NO_SHOW'],
+  CHECKED_IN:  ['COMPLETED', 'CANCELLED'],
   COMPLETED:   [],
   CANCELLED:   [],
   NO_SHOW:     [],
 });
 
 export const VISIT_TRANSITIONS = Object.freeze({
-  IN_PROGRESS: ['COMPLETED'],
-  COMPLETED:   [],
+  OPEN:        ['CLOSED'],
+  CLOSED:      [],
 });
 
 export const INVOICE_TRANSITIONS = Object.freeze({
-  DRAFT:          ['ISSUED', 'CANCELLED'],
-  ISSUED:         ['PARTIALLY_PAID', 'PAID', 'CANCELLED'],
-  PARTIALLY_PAID: ['PAID', 'CANCELLED', 'REFUNDED'],
-  PAID:           ['REFUNDED'],
-  CANCELLED:      [],
-  REFUNDED:       [],
+  DRAFT:          ['ISSUED', 'VOID'],
+  ISSUED:         ['PARTIALLY_PAID', 'PAID', 'VOID'],
+  PARTIALLY_PAID: ['PAID', 'VOID'],
+  PAID:           [],
+  VOID:           [],
 });
 
 /**
- * Validate a state transition.
- * @param {Object} map   One of the transition maps above
- * @param {string} from  Current status
- * @param {string} to    Desired status
+ * Validate an appointment status transition.
+ * @param {string} from Current status
+ * @param {string} to Desired status
+ * @returns {boolean}
+ */
+export function isValidAppointmentTransition(from, to) {
+  const allowed = APPOINTMENT_TRANSITIONS[from];
+  if (!allowed) return false;
+  return allowed.includes(to);
+}
+
+/**
+ * Generic transition validator.
+ * @param {Object} map Transition map
+ * @param {string} from Current status
+ * @param {string} to Desired status
  * @returns {boolean}
  */
 export function isValidTransition(map, from, to) {
