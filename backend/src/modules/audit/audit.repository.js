@@ -36,6 +36,8 @@ export async function findAll(filters = {}) {
     action,
     entity,
     entityId,
+    from,
+    to,
     dateFrom,
     dateTo,
     orderBy = [{ createdAt: 'desc' }],
@@ -48,10 +50,12 @@ export async function findAll(filters = {}) {
   if (entity) where.entity = entity;
   if (entityId) where.entityId = String(entityId);
 
-  if (dateFrom || dateTo) {
+  const start = from || dateFrom;
+  const end = to || dateTo;
+  if (start || end) {
     where.createdAt = {};
-    if (dateFrom) where.createdAt.gte = new Date(dateFrom);
-    if (dateTo) where.createdAt.lte = new Date(dateTo);
+    if (start) where.createdAt.gte = new Date(start);
+    if (end) where.createdAt.lte = new Date(end);
   }
 
   const skip = (page - 1) * limit;

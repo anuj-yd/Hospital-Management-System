@@ -1,6 +1,7 @@
 import * as auditRepo from './audit.repository.js';
 import { getRequestContext } from '../../common/context/requestContext.js';
 import { logger } from '../../config/logger.js';
+import { buildPaginationMeta } from '../../common/utils/pagination.js';
 
 const SENSITIVE_KEYS = new Set([
   'password',
@@ -116,6 +117,17 @@ export async function record({
 /**
  * Retrieve paginated audit logs (used for reporting/administrative inspection).
  */
-export async function getAuditLogs(filters) {
-  return auditRepo.findAll(filters);
+export async function getAuditLogs(filters = {}) {
+  const page = Math.max(1, parseInt(filters.page, 10) || 1);
+  const limit = Math.max(1, parseInt(filters.limit, 10) || 20);
+
+  const { data, total } = await auditRepo.findAll({
+    ...filters,
+    page,
+    limit,
+  });
+
+  const meta = buildPaginationMeta(page, limit, total);
+
+  return { data, meta };
 }
